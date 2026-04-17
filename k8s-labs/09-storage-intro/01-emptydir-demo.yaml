@@ -1,0 +1,39 @@
+---
+# emptyDir: volumen temporal que vive mientras el Pod existe
+# Se crea cuando el Pod arranca, se destruye cuando el Pod muere
+# Útil para compartir datos entre contenedores del MISMO Pod
+apiVersion: v1
+kind: Pod
+metadata:
+  name: pod-emptydir
+  namespace: bootcamp
+spec:
+  containers:
+    - name: writer
+      image: busybox:1.36
+      command: ["/bin/sh", "-c"]
+      args:
+        - |
+          while true; do
+            echo "$(date): dato escrito por writer" >> /data/output.txt
+            echo "Archivos en /data: $(ls /data/)"
+            sleep 5
+          done
+      volumeMounts:
+        - name: shared-data
+          mountPath: /data
+
+    - name: reader
+      image: busybox:1.36
+      command: ["/bin/sh", "-c"]
+      args:
+        - |
+          sleep 3
+          tail -f /data/output.txt
+      volumeMounts:
+        - name: shared-data
+          mountPath: /data
+
+  volumes:
+    - name: shared-data
+      emptyDir: {}

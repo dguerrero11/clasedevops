@@ -1,0 +1,32 @@
+---
+# FORMA 1: Inyectar ConfigMap como variables de entorno
+# envFrom inyecta TODAS las claves del ConfigMap como env vars
+apiVersion: v1
+kind: Pod
+metadata:
+  name: pod-config-env
+  namespace: bootcamp
+spec:
+  containers:
+    - name: app
+      image: busybox:1.36
+      command: ["/bin/sh", "-c"]
+      args:
+        - |
+          echo "=== Variables de entorno desde ConfigMap ==="
+          echo "APP_ENV=$APP_ENV"
+          echo "APP_PORT=$APP_PORT"
+          echo "APP_LOG_LEVEL=$APP_LOG_LEVEL"
+          echo "MAX_CONNECTIONS=$MAX_CONNECTIONS"
+          sleep 3600
+      envFrom:
+        - configMapRef:
+            name: app-config
+
+      # FORMA alternativa: inyectar claves específicas
+      # env:
+      #   - name: MI_VAR
+      #     valueFrom:
+      #       configMapKeyRef:
+      #         name: app-config
+      #         key: APP_ENV

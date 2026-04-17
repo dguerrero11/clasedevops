@@ -1,0 +1,33 @@
+---
+# RBAC: Role define QUE se puede hacer (permisos)
+# RoleBinding conecta el Role con un ServiceAccount (quién puede hacerlo)
+#
+# Verbos disponibles: get, list, watch, create, update, patch, delete
+# Recursos: pods, services, deployments, configmaps, secrets, etc.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: pod-reader
+  namespace: bootcamp
+rules:
+  - apiGroups: [""]           # "" = core API group (pods, services, configmaps...)
+    resources: ["pods", "pods/log"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: [""]
+    resources: ["configmaps"]
+    verbs: ["get", "list"]
+
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: pod-reader-binding
+  namespace: bootcamp
+subjects:
+  - kind: ServiceAccount
+    name: app-serviceaccount
+    namespace: bootcamp
+roleRef:
+  kind: Role
+  name: pod-reader
+  apiGroup: rbac.authorization.k8s.io

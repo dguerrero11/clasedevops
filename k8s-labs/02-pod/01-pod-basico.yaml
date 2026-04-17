@@ -1,0 +1,31 @@
+---
+# TEORIA: Un Pod es la unidad más pequeña de Kubernetes.
+# Contiene uno o más contenedores que comparten red y almacenamiento.
+# En producción los Pods se gestionan con Deployments, no directamente.
+#
+# CAMPOS CLAVE:
+#   spec.containers[].image    → imagen Docker
+#   spec.containers[].ports    → puertos expuestos (informativo)
+#   spec.containers[].command  → sobreescribe ENTRYPOINT
+#   spec.containers[].args     → sobreescribe CMD
+apiVersion: v1
+kind: Pod
+metadata:
+  name: pod-nginx
+  namespace: bootcamp
+  labels:
+    app: nginx
+    version: "1.0"
+spec:
+  containers:
+    - name: nginx
+      image: nginx:1.25
+      ports:
+        - containerPort: 80
+      resources:
+        requests:
+          cpu: "100m"
+          memory: "64Mi"
+        limits:
+          cpu: "200m"
+          memory: "128Mi"

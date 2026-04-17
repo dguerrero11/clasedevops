@@ -1,0 +1,32 @@
+---
+# hostPath: monta un directorio del NODO en el Pod
+# CUIDADO: el Pod queda atado al nodo donde corrió
+# Solo usar para: logging, monitoring agents, acceso a /proc
+apiVersion: v1
+kind: Pod
+metadata:
+  name: pod-hostpath
+  namespace: bootcamp
+spec:
+  containers:
+    - name: app
+      image: busybox:1.36
+      command: ["/bin/sh", "-c"]
+      args:
+        - |
+          echo "=== Archivos del nodo en /host-logs ==="
+          ls /host-logs/ | head -10
+          echo ""
+          echo "=== Escribiendo en el nodo ==="
+          echo "$(date): escrito desde pod-hostpath" >> /host-logs/k8s-test.log
+          echo "Archivo creado en el nodo host"
+          sleep 3600
+      volumeMounts:
+        - name: host-logs
+          mountPath: /host-logs
+
+  volumes:
+    - name: host-logs
+      hostPath:
+        path: /var/log
+        type: Directory

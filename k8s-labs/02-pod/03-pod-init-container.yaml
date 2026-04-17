@@ -1,0 +1,28 @@
+---
+# PATRON: Init Container
+# Los initContainers corren ANTES que los contenedores principales.
+# Se usan para: esperar dependencias, descargar configs, preparar datos.
+# Si un initContainer falla, el Pod no arranca.
+apiVersion: v1
+kind: Pod
+metadata:
+  name: pod-init
+  namespace: bootcamp
+  labels:
+    app: init-demo
+spec:
+  initContainers:
+    - name: init-esperar-servicio
+      image: busybox:1.36
+      command: ["/bin/sh", "-c"]
+      args:
+        - |
+          echo "Esperando que el servicio de base de datos esté listo..."
+          sleep 5
+          echo "Servicio listo. Iniciando aplicación."
+
+  containers:
+    - name: app
+      image: nginx:1.25
+      ports:
+        - containerPort: 80

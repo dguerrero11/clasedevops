@@ -1,0 +1,95 @@
+---
+# TEORIA: StatefulSet es como un Deployment pero para apps con ESTADO.
+# Garantiza:
+#   - Nombres de pod estables: postgres-0, postgres-1, postgres-2
+#   - Orden de arranque: 0 → 1 → 2 (espera Ready antes del siguiente)
+#   - Orden de parada:   2 → 1 → 0
+#   - PVC individual por pod (volumeClaimTemplates)
+#   - DNS estable: postgres-0.postgres-headless.bootcamp.svc.cluster.local
+#
+# Diferencia clave con Deployment:
+#   Deployment  → pods intercambiables, nombres aleatorios
+#   StatefulSet → pods con identidad propia y storage dedicado
+
+# Headless Service: permite DNS directo a cada pod por nombre
+# clusterIP: None → no hay IP virtual, cada pod tiene su propio DNS
+apiVersion: v1
+kind: Service
+metadata:
+  name: postgres-headless
+  namespace: bootcamp
+  labels:
+    app: postgres
+spec:
+  clusterIP: None
+  selector:
+    app: postgres
+  ports:
+    - port: 5432
+      name: postgres
+
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: postgres
+  namespace: bootcamp
+spec:
+  serviceName: postgres-headless    # debe coincidir con el headless service
+  replicas: 1
+  selector:
+    matchLabels:
+      app: postgres
+  template:
+    metadata:
+      labels:
+        app: postgres
+    spec:
+      containers:
+        - name: postgres
+          image: postgres:15-alpine
+          ports:
+            - containerPort: 5432
+          env:
+            - name: POSTGRES_DB
+              value: bootcamp
+            - name: POSTGRES_USER
+              value: admin
+            - name: POSTGRES_PASSWORD
+              value: bootcamp123
+            - name: PGDATA
+              value: /var/lib/postgresql/data/pgdata
+          volumeMounts:
+            - name: postgres-data
+              mountPath: /var/lib/postgresql/data
+          livenessProbe:
+            exec:
+              command: ["pg_isready", "-U", "admin", "-d", "bootcamp"]
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            failureThreshold: 5
+          readinessProbe:
+            exec:
+              command: ["pg_isready", "-U", "admin", "-d", "bootcamp"]
+            initialDelaySeconds: 15
+            periodSeconds: 5
+          resources:
+            requests:
+              cpu: "250m"
+              memory: "256Mi"
+            limits:
+              cpu: "500m"
+              memory: "512Mi"
+
+  # volumeClaimTemplates: cada pod obtiene su propio PVC automáticamente
+  # Nombre del PVC: <template-name>-<statefulset-name>-<ordinal>
+  # Ejemplo: postgres-data-postgres-0
+  volumeClaimTemplates:
+    - metadata:
+        name: postgres-data
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        storageClassName: nfs-csi
+        resources:
+          requests:
+            storage: 1Gi

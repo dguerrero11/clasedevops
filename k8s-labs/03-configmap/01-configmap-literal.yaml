@@ -1,0 +1,32 @@
+---
+# TEORIA: ConfigMap almacena configuración no sensible como pares clave-valor.
+# Desacopla la configuración del código/imagen.
+# Puede inyectarse como: variables de entorno, argumentos, o archivos montados.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: app-config
+  namespace: bootcamp
+data:
+  # Variables de entorno simples
+  APP_ENV: "production"
+  APP_PORT: "8080"
+  APP_LOG_LEVEL: "info"
+  MAX_CONNECTIONS: "100"
+
+  # También puede contener archivos completos como string
+  app.properties: |
+    environment=production
+    port=8080
+    log.level=info
+    max.connections=100
+
+  nginx.conf: |
+    server {
+      listen 80;
+      server_name localhost;
+      location / {
+        root /usr/share/nginx/html;
+        index index.html;
+      }
+    }

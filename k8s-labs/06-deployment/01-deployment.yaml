@@ -1,0 +1,67 @@
+---
+# TEORIA: Deployment gestiona un conjunto de Pods idénticos (ReplicaSet).
+# Garantiza que siempre haya N réplicas corriendo.
+# Permite rolling updates (actualización sin downtime) y rollback.
+#
+# Jerarquía:  Deployment → ReplicaSet → Pod(s)
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: nginx-deployment
+  namespace: bootcamp
+  labels:
+    app: nginx
+spec:
+  replicas: 3                   # Cuántos Pods queremos
+
+  selector:
+    matchLabels:
+      app: nginx                # Debe coincidir con template.metadata.labels
+
+  strategy:
+    type: RollingUpdate         # Actualización sin downtime (default)
+    rollingUpdate:
+      maxSurge: 1               # Pods extra durante el update
+      maxUnavailable: 1         # Pods que pueden estar caídos durante el update
+
+  template:                     # Aquí empieza la definición del Pod
+    metadata:
+      labels:
+        app: nginx
+        version: "1.25"
+    spec:
+      containers:
+        - name: nginx
+          image: nginx:1.25
+          ports:
+            - containerPort: 80
+
+          # Variables de entorno (puede venir de ConfigMap/Secret)
+          env:
+            - name: APP_ENV
+              value: "production"
+
+          # Health checks — fundamentales en producción
+          livenessProbe:
+            httpGet:
+              path: /
+              port: 80
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            failureThreshold: 3
+
+          readinessProbe:
+            httpGet:
+              path: /
+              port: 80
+            initialDelaySeconds: 5
+            periodSeconds: 5
+            failureThreshold: 3
+
+          resources:
+            requests:
+              cpu: "100m"
+              memory: "64Mi"
+            limits:
+              cpu: "200m"
+              memory: "128Mi"

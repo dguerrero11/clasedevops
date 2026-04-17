@@ -1,0 +1,12 @@
+---
+# TEORIA: Un Namespace es un mecanismo de aislamiento lógico dentro del cluster.
+# Permite separar recursos por equipo, proyecto o entorno (dev/staging/prod).
+# Los recursos dentro de un namespace tienen nombres únicos entre sí,
+# pero pueden repetirse en distintos namespaces.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: bootcamp
+  labels:
+    env: training
+    team: devops

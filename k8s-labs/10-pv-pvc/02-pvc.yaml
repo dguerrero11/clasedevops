@@ -1,0 +1,26 @@
+---
+# TEORIA: PersistentVolumeClaim (PVC)
+# Es la "solicitud de almacenamiento" del desarrollador.
+# Kubernetes busca un PV compatible y lo vincula (Bound).
+# El desarrollador NO necesita saber dónde está el disco físico.
+#
+# Binding: Kubernetes busca un PV que cumpla:
+#   - storageClassName coincide (o ambos vacíos para static)
+#   - accessModes incluye lo solicitado
+#   - capacity >= lo solicitado
+#   - selector labels coinciden (si se especifica)
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: pvc-bootcamp
+  namespace: bootcamp
+spec:
+  accessModes:
+    - ReadWriteMany
+  resources:
+    requests:
+      storage: 1Gi             # puede ser menor que la capacidad del PV
+  storageClassName: ""         # vacío = static provisioning
+  selector:
+    matchLabels:
+      clase: bootcamp          # solo considera PVs con este label

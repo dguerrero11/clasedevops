@@ -1,0 +1,34 @@
+---
+# TEORIA: PersistentVolume (PV)
+# Representa un disco real en el cluster.
+# Lo crea el administrador (o dinámicamente via StorageClass).
+# Es un recurso del CLUSTER — NO tiene namespace.
+#
+# Política de reclamación (reclaimPolicy):
+#   Retain  → cuando se borra el PVC, el PV y los datos se conservan (admin decide)
+#   Delete  → cuando se borra el PVC, el PV y los datos se borran automáticamente
+#
+# Modos de acceso:
+#   ReadWriteOnce  (RWO) → un solo nodo puede leer/escribir
+#   ReadOnlyMany   (ROX) → múltiples nodos pueden leer
+#   ReadWriteMany  (RWX) → múltiples nodos pueden leer/escribir (NFS lo soporta)
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: pv-nfs-clase2
+  labels:
+    type: nfs
+    clase: bootcamp
+spec:
+  capacity:
+    storage: 2Gi
+  accessModes:
+    - ReadWriteMany          # NFS soporta múltiples nodos simultáneos
+  persistentVolumeReclaimPolicy: Retain
+  storageClassName: ""       # vacío = aprovisionamiento manual (static)
+  nfs:
+    server: 192.168.109.210
+    path: /srv/nfs/k8s-storage
+  mountOptions:
+    - nfsvers=4.1
+    - hard

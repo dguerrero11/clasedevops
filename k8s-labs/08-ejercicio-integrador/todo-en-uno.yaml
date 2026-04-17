@@ -1,0 +1,148 @@
+---
+# ========================================================
+# EJERCICIO INTEGRADOR
+# Despliega una app web completa con todos los recursos:
+#   Namespace, ServiceAccount, ConfigMap, Secret,
+#   Deployment, Service
+# ========================================================
+
+# 1. Namespace propio para la app
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: mi-app
+  labels:
+    env: demo
+
+---
+# 2. ServiceAccount para la app
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: mi-app-sa
+  namespace: mi-app
+automountServiceAccountToken: false   # no necesita llamar a la API
+
+---
+# 3. ConfigMap con configuración
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: mi-app-config
+  namespace: mi-app
+data:
+  APP_ENV: "demo"
+  APP_NAME: "Mi Aplicación K8s"
+  LOG_LEVEL: "info"
+  # Página HTML custom
+  index.html: |
+    <!DOCTYPE html>
+    <html>
+    <head><title>Mi App K8s</title></head>
+    <body>
+      <h1>Hola desde Kubernetes!</h1>
+      <p>Desplegada con Namespace, SA, ConfigMap, Secret, Deployment y Service.</p>
+    </body>
+    </html>
+
+---
+# 4. Secret con datos sensibles
+apiVersion: v1
+kind: Secret
+metadata:
+  name: mi-app-secret
+  namespace: mi-app
+type: Opaque
+data:
+  API_KEY: Ym9vdGNhbXAtc2VjcmV0LWtleQ==   # bootcamp-secret-key
+
+---
+# 5. Deployment
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: mi-app-deployment
+  namespace: mi-app
+  labels:
+    app: mi-app
+    version: "1.0"
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: mi-app
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0         # Zero downtime garantizado
+  template:
+    metadata:
+      labels:
+        app: mi-app
+        version: "1.0"
+    spec:
+      serviceAccountName: mi-app-sa
+      containers:
+        - name: app
+          image: nginx:1.25
+          ports:
+            - containerPort: 80
+          envFrom:
+            - configMapRef:
+                name: mi-app-config
+          env:
+            - name: API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: mi-app-secret
+                  key: API_KEY
+          volumeMounts:
+            - name: html-content
+              mountPath: /usr/share/nginx/html
+          livenessProbe:
+            httpGet:
+              path: /
+              port: 80
+            initialDelaySeconds: 10
+            periodSeconds: 15
+          readinessProbe:
+            httpGet:
+              path: /
+              port: 80
+            initialDelaySeconds: 5
+            periodSeconds: 5
+          resources:
+            requests:
+              cpu: "100m"
+              memory: "64Mi"
+            limits:
+              cpu: "200m"
+              memory: "128Mi"
+      volumes:
+        - name: html-content
+          configMap:
+            name: mi-app-config
+            items:
+              - key: index.html
+                path: index.html
+
+---
+# 6. Service NodePort para acceder desde fuera del cluster
+apiVersion: v1
+kind: Service
+metadata:
+  name: mi-app-service
+  namespace: mi-app
+  labels:
+    app: mi-app
+spec:
+  type: NodePort
+  selector:
+    app: mi-app
+  ports:
+    - name: http
+      protocol: TCP
+      port: 80
+      targetPort: 80
+      nodePort: 30090

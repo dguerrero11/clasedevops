@@ -1,0 +1,46 @@
+---
+# TEORIA: Service provee una IP estable y un nombre DNS para acceder a Pods.
+# Los Pods tienen IPs efímeras (cambian al reiniciarse).
+# El Service selecciona Pods mediante labels y balancea el tráfico.
+#
+# TIPO ClusterIP (default): solo accesible dentro del cluster
+# DNS interno: <service-name>.<namespace>.svc.cluster.local
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: backend-deployment
+  namespace: bootcamp
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: backend
+  template:
+    metadata:
+      labels:
+        app: backend
+        tier: backend
+    spec:
+      containers:
+        - name: backend
+          image: nginx:1.25
+          ports:
+            - containerPort: 80
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: backend-service
+  namespace: bootcamp
+  labels:
+    app: backend
+spec:
+  type: ClusterIP             # Solo accesible dentro del cluster
+  selector:
+    app: backend              # Selecciona Pods con este label
+  ports:
+    - name: http
+      protocol: TCP
+      port: 80                # Puerto del Service (otros pods llaman a este)
+      targetPort: 80          # Puerto del contenedor

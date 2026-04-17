@@ -1,0 +1,68 @@
+---
+# TEORIA: DaemonSet garantiza que UN pod corre en CADA nodo del cluster.
+# Cuando se agrega un nodo → pod creado automáticamente.
+# Cuando se elimina un nodo → pod destruido automáticamente.
+#
+# Casos de uso reales:
+#   - Agentes de logging (Fluentd, Filebeat, Promtail)
+#   - Agentes de monitoreo (Prometheus node-exporter, Datadog agent)
+#   - Plugins de red (Flannel, Calico — ya los tienes instalados!)
+#   - Agentes de seguridad (Falco)
+#
+# Kubernetes ya usa DaemonSets internamente:
+#   kubectl get daemonset -n kube-system    → kube-proxy
+#   kubectl get daemonset -n kube-flannel   → kube-flannel-ds
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: log-agent
+  namespace: bootcamp
+  labels:
+    app: log-agent
+spec:
+  selector:
+    matchLabels:
+      app: log-agent
+  template:
+    metadata:
+      labels:
+        app: log-agent
+    spec:
+      containers:
+        - name: log-agent
+          image: busybox:1.36
+          command: ["/bin/sh", "-c"]
+          args:
+            - |
+              NODE=$(cat /proc/sys/kernel/hostname)
+              echo "=== Log Agent iniciado en nodo: $NODE ==="
+              while true; do
+                echo "$(date) [nodo: $NODE] recolectando logs..."
+                echo "Archivos de log recientes:"
+                ls /host-logs/*.log 2>/dev/null | head -3 || echo "  (ninguno)"
+                sleep 30
+              done
+          volumeMounts:
+            - name: host-logs
+              mountPath: /host-logs
+              readOnly: true
+          resources:
+            requests:
+              cpu: "50m"
+              memory: "32Mi"
+            limits:
+              cpu: "100m"
+              memory: "64Mi"
+
+      volumes:
+        - name: host-logs
+          hostPath:
+            path: /var/log
+            type: Directory
+
+      # toleration: permite que el pod corra también en el nodo master
+      # Por defecto el control-plane tiene un taint que rechaza pods
+      tolerations:
+        - key: node-role.kubernetes.io/control-plane
+          operator: Exists
+          effect: NoSchedule

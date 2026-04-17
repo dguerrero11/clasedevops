@@ -1,0 +1,51 @@
+---
+# Demostración: dos Pods en distintos nodos comparten el mismo PVC (RWX)
+# Esto solo es posible con NFS o sistemas de archivos distribuidos (Ceph, GlusterFS)
+# Con block storage (AWS EBS, local disk) esto NO funcionaría
+apiVersion: v1
+kind: Pod
+metadata:
+  name: pod-escritor
+  namespace: bootcamp
+spec:
+  containers:
+    - name: escritor
+      image: busybox:1.36
+      command: ["/bin/sh", "-c"]
+      args:
+        - |
+          while true; do
+            echo "$(date) [escritor - $(hostname)]: dato compartido" >> /datos/compartido.txt
+            sleep 10
+          done
+      volumeMounts:
+        - name: datos-nfs
+          mountPath: /datos
+  volumes:
+    - name: datos-nfs
+      persistentVolumeClaim:
+        claimName: pvc-bootcamp
+
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: pod-lector
+  namespace: bootcamp
+spec:
+  containers:
+    - name: lector
+      image: busybox:1.36
+      command: ["/bin/sh", "-c"]
+      args:
+        - |
+          sleep 5
+          echo "=== Leyendo lo que escribe el otro pod ==="
+          tail -f /datos/compartido.txt
+      volumeMounts:
+        - name: datos-nfs
+          mountPath: /datos
+  volumes:
+    - name: datos-nfs
+      persistentVolumeClaim:
+        claimName: pvc-bootcamp

@@ -1,0 +1,34 @@
+---
+# EJEMPLO: Comunicación entre microservicios usando DNS interno de Kubernetes
+# frontend llama a backend usando: http://backend-service (mismo namespace)
+# o http://backend-service.bootcamp.svc.cluster.local (cross-namespace)
+apiVersion: v1
+kind: Pod
+metadata:
+  name: pod-test-dns
+  namespace: bootcamp
+spec:
+  containers:
+    - name: curl
+      image: curlimages/curl:8.5.0
+      command: ["/bin/sh", "-c"]
+      args:
+        - |
+          echo "=== Test de DNS interno de Kubernetes ==="
+          echo ""
+
+          echo "--- Resolviendo nombre del servicio ---"
+          nslookup backend-service 2>/dev/null || \
+            getent hosts backend-service
+
+          echo ""
+          echo "--- Llamando al servicio por nombre corto ---"
+          curl -s --max-time 5 http://backend-service/ | head -5
+
+          echo ""
+          echo "--- Llamando por FQDN ---"
+          curl -s --max-time 5 http://backend-service.bootcamp.svc.cluster.local/ | head -5
+
+          echo ""
+          echo "=== Listo ==="
+          sleep 3600

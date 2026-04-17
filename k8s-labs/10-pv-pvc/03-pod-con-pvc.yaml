@@ -1,0 +1,34 @@
+---
+# Pod que usa el PVC para almacenamiento persistente
+# Si este Pod muere y se recrea, los datos en /datos siguen ahí
+apiVersion: v1
+kind: Pod
+metadata:
+  name: pod-con-pvc
+  namespace: bootcamp
+spec:
+  containers:
+    - name: app
+      image: busybox:1.36
+      command: ["/bin/sh", "-c"]
+      args:
+        - |
+          echo "=== Probando persistencia ==="
+          echo "Archivos existentes en /datos:"
+          ls -la /datos/ 2>/dev/null || echo "(directorio vacío)"
+          echo ""
+          TIMESTAMP=$(date)
+          echo "$TIMESTAMP: Pod arrancado - $(hostname)" >> /datos/historia.txt
+          echo "Escrito: $TIMESTAMP"
+          echo ""
+          echo "=== Historial completo ==="
+          cat /datos/historia.txt
+          sleep 3600
+      volumeMounts:
+        - name: datos-persistentes
+          mountPath: /datos
+
+  volumes:
+    - name: datos-persistentes
+      persistentVolumeClaim:
+        claimName: pvc-bootcamp
