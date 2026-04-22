@@ -1,0 +1,27 @@
+# Lanzar con: kubectl apply -f pipelinerun-demo.yaml
+# Ver logs:   tkn pipelinerun logs --last -f -n tekton-pipelines
+apiVersion: tekton.dev/v1beta1
+kind: PipelineRun
+metadata:
+  generateName: build-and-deploy-run-
+  namespace: tekton-pipelines
+spec:
+  pipelineRef:
+    name: build-and-deploy
+  params:
+    - name: repo-url
+      value: "https://github.com/USUARIO/k8s-gitops-demo"   # <- cambiar
+    - name: revision
+      value: main
+    - name: image
+      value: "USUARIO/mi-tienda:v1"                          # <- cambiar
+  workspaces:
+    - name: shared-source
+      volumeClaimTemplate:
+        spec:
+          accessModes:
+            - ReadWriteOnce
+          storageClassName: nfs-csi
+          resources:
+            requests:
+              storage: 500Mi
