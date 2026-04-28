@@ -1,0 +1,989 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Clase 4 — GitOps CI/CD con Tekton + ArgoCD</title>
+<style>
+  :root {
+    --bg: #0d1117;
+    --surface: #161b22;
+    --border: #30363d;
+    --accent: #238636;
+    --accent2: #1f6feb;
+    --accent3: #a371f7;
+    --text: #e6edf3;
+    --muted: #8b949e;
+    --yellow: #d29922;
+    --red: #da3633;
+    --cyan: #39c5cf;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+    height: 100vh;
+    overflow: hidden;
+  }
+
+  /* ── SLIDE CONTAINER ── */
+  .deck { width: 100vw; height: 100vh; position: relative; }
+
+  .slide {
+    position: absolute;
+    inset: 0;
+    display: none;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    padding: 48px 64px;
+    opacity: 0;
+    transition: opacity .35s ease;
+  }
+  .slide.active { display: flex; opacity: 1; }
+
+  /* ── NAVIGATION ── */
+  .nav {
+    position: fixed;
+    bottom: 24px;
+    left: 50%;
+    transform: translateX(-50%);
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    background: rgba(22,27,34,.9);
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    padding: 8px 20px;
+    font-size: 13px;
+    color: var(--muted);
+    backdrop-filter: blur(8px);
+    z-index: 100;
+  }
+  .nav button {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    color: var(--text);
+    border-radius: 6px;
+    padding: 4px 14px;
+    cursor: pointer;
+    font-size: 14px;
+    transition: background .2s;
+  }
+  .nav button:hover { background: var(--accent2); border-color: var(--accent2); }
+
+  .progress {
+    position: fixed;
+    top: 0; left: 0;
+    height: 3px;
+    background: linear-gradient(90deg, var(--accent2), var(--accent3));
+    transition: width .3s ease;
+    z-index: 200;
+  }
+
+  /* ── SLIDE TYPES ── */
+
+  /* COVER */
+  .slide-cover { background: radial-gradient(ellipse at 60% 40%, #0e2a4d 0%, var(--bg) 70%); }
+  .slide-cover .eyebrow {
+    font-size: 13px; letter-spacing: .12em; text-transform: uppercase;
+    color: var(--accent2); margin-bottom: 16px; font-weight: 600;
+  }
+  .slide-cover h1 {
+    font-size: clamp(32px, 5vw, 58px);
+    font-weight: 800;
+    line-height: 1.1;
+    text-align: center;
+    margin-bottom: 20px;
+  }
+  .slide-cover h1 span { color: var(--accent2); }
+  .slide-cover .subtitle {
+    font-size: 18px; color: var(--muted); text-align: center; max-width: 640px;
+  }
+  .slide-cover .tags { display: flex; gap: 10px; margin-top: 32px; flex-wrap: wrap; justify-content: center; }
+  .tag {
+    background: rgba(31,111,235,.15);
+    border: 1px solid rgba(31,111,235,.4);
+    color: var(--accent2);
+    padding: 4px 14px; border-radius: 999px; font-size: 13px;
+  }
+  .tag.green { background: rgba(35,134,54,.15); border-color: rgba(35,134,54,.4); color: var(--accent); }
+  .tag.purple { background: rgba(163,113,247,.15); border-color: rgba(163,113,247,.4); color: var(--accent3); }
+  .tag.yellow { background: rgba(210,153,34,.15); border-color: rgba(210,153,34,.4); color: var(--yellow); }
+
+  /* SECTION DIVIDER */
+  .slide-section {
+    background: linear-gradient(135deg, #0e1e3d 0%, var(--bg) 100%);
+    text-align: center;
+  }
+  .slide-section .section-num {
+    font-size: 80px; font-weight: 900; line-height: 1;
+    background: linear-gradient(135deg, var(--accent2), var(--accent3));
+    -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+    margin-bottom: 12px;
+  }
+  .slide-section h2 { font-size: clamp(28px, 4vw, 48px); font-weight: 800; margin-bottom: 12px; }
+  .slide-section p { color: var(--muted); font-size: 18px; }
+
+  /* CONTENT */
+  .slide-content { align-items: flex-start; }
+  .slide-content .slide-header {
+    font-size: clamp(22px, 3vw, 36px); font-weight: 700;
+    margin-bottom: 32px; width: 100%;
+    border-bottom: 2px solid var(--border);
+    padding-bottom: 16px;
+  }
+  .slide-content .slide-header span { color: var(--accent2); }
+
+  /* TWO COLUMNS */
+  .cols { display: grid; grid-template-columns: 1fr 1fr; gap: 32px; width: 100%; }
+  .cols.c3 { grid-template-columns: 1fr 1fr 1fr; }
+
+  /* CARDS */
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 24px;
+  }
+  .card h3 { font-size: 16px; font-weight: 700; margin-bottom: 12px; display: flex; align-items: center; gap: 8px; }
+  .card p, .card li { font-size: 15px; color: var(--muted); line-height: 1.7; }
+  .card ul { padding-left: 18px; }
+  .card.accent-blue { border-top: 3px solid var(--accent2); }
+  .card.accent-green { border-top: 3px solid var(--accent); }
+  .card.accent-purple { border-top: 3px solid var(--accent3); }
+  .card.accent-yellow { border-top: 3px solid var(--yellow); }
+
+  /* LIST */
+  .step-list { list-style: none; width: 100%; }
+  .step-list li {
+    display: flex; align-items: flex-start; gap: 16px;
+    padding: 14px 0; border-bottom: 1px solid var(--border);
+    font-size: 16px; line-height: 1.5;
+  }
+  .step-list li:last-child { border: none; }
+  .step-num {
+    min-width: 32px; height: 32px;
+    background: var(--accent2); border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 13px; font-weight: 700; color: #fff;
+    flex-shrink: 0;
+  }
+  .step-num.green { background: var(--accent); }
+  .step-num.purple { background: var(--accent3); }
+
+  /* CODE */
+  pre {
+    background: #010409;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 20px 24px;
+    font-family: 'Cascadia Code', 'Fira Code', 'Consolas', monospace;
+    font-size: 14px;
+    line-height: 1.7;
+    overflow-x: auto;
+    width: 100%;
+    color: #e6edf3;
+  }
+  .kw { color: #ff7b72; }
+  .str { color: #a5d6ff; }
+  .cm { color: var(--muted); font-style: italic; }
+  .hi { color: var(--accent); font-weight: 600; }
+  .hi2 { color: var(--accent2); font-weight: 600; }
+  .hi3 { color: var(--accent3); }
+
+  /* FLOW DIAGRAM */
+  .flow {
+    display: flex; align-items: center; gap: 0;
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 12px; padding: 20px 24px; width: 100%;
+    flex-wrap: wrap; justify-content: center;
+  }
+  .flow-box {
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 12px 18px;
+    text-align: center;
+    font-size: 14px; font-weight: 600;
+    min-width: 110px;
+  }
+  .flow-box .icon { font-size: 22px; display: block; margin-bottom: 4px; }
+  .flow-box.blue { border-color: var(--accent2); color: var(--accent2); }
+  .flow-box.green { border-color: var(--accent); color: var(--accent); }
+  .flow-box.purple { border-color: var(--accent3); color: var(--accent3); }
+  .flow-box.yellow { border-color: var(--yellow); color: var(--yellow); }
+  .flow-arrow { color: var(--muted); font-size: 22px; margin: 0 4px; }
+
+  /* BADGE */
+  .badge {
+    display: inline-block; padding: 3px 12px; border-radius: 999px;
+    font-size: 12px; font-weight: 700;
+  }
+  .badge.blue { background: rgba(31,111,235,.2); color: var(--accent2); border: 1px solid rgba(31,111,235,.4); }
+  .badge.green { background: rgba(35,134,54,.2); color: var(--accent); border: 1px solid rgba(35,134,54,.4); }
+  .badge.red { background: rgba(218,54,51,.2); color: var(--red); border: 1px solid rgba(218,54,51,.4); }
+
+  /* CALLOUT */
+  .callout {
+    width: 100%;
+    border-radius: 10px;
+    padding: 16px 20px;
+    font-size: 15px;
+    line-height: 1.6;
+    margin: 8px 0;
+  }
+  .callout.info { background: rgba(31,111,235,.1); border-left: 4px solid var(--accent2); }
+  .callout.warn { background: rgba(210,153,34,.1); border-left: 4px solid var(--yellow); }
+  .callout.success { background: rgba(35,134,54,.1); border-left: 4px solid var(--accent); }
+  .callout.danger { background: rgba(218,54,51,.1); border-left: 4px solid var(--red); }
+  .callout strong { font-weight: 700; }
+
+  /* BIG QUESTION */
+  .big-q {
+    font-size: clamp(22px, 3.5vw, 42px);
+    font-weight: 800;
+    text-align: center;
+    color: var(--accent2);
+    line-height: 1.3;
+    max-width: 800px;
+    margin-bottom: 24px;
+  }
+
+  /* DEMO SLIDE */
+  .slide-demo { background: radial-gradient(ellipse at 30% 70%, #0e2a1a 0%, var(--bg) 70%); }
+  .demo-label {
+    font-size: 13px; letter-spacing: .15em; text-transform: uppercase;
+    color: var(--accent); font-weight: 700; margin-bottom: 16px;
+  }
+  .demo-title { font-size: clamp(28px, 4vw, 48px); font-weight: 800; margin-bottom: 24px; text-align: center; }
+
+  /* TABLE */
+  table { width: 100%; border-collapse: collapse; font-size: 15px; }
+  th { background: var(--surface); color: var(--muted); font-weight: 600;
+       text-align: left; padding: 10px 16px; border-bottom: 2px solid var(--border); }
+  td { padding: 12px 16px; border-bottom: 1px solid var(--border); }
+  tr:last-child td { border: none; }
+  tr:hover td { background: rgba(255,255,255,.02); }
+
+  /* CLOSE SLIDE */
+  .slide-close { text-align: center; }
+  .close-icon { font-size: 64px; margin-bottom: 16px; }
+  .slide-close h2 { font-size: 36px; font-weight: 800; margin-bottom: 12px; }
+
+  /* KEYBOARD HINT */
+  .kbd {
+    display: inline-block;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 1px 7px;
+    font-size: 12px;
+    font-family: monospace;
+  }
+</style>
+</head>
+<body>
+
+<div class="progress" id="progress"></div>
+
+<div class="deck" id="deck">
+
+  <!-- ══════════════════════════════════════════════
+       SLIDE 1 — COVER
+  ══════════════════════════════════════════════ -->
+  <div class="slide slide-cover active">
+    <div class="eyebrow">Bootcamp Kubernetes · Clase 4 de 5</div>
+    <h1>GitOps CI/CD con<br><span>Tekton + ArgoCD</span></h1>
+    <p class="subtitle">Un solo <code>git push</code> lleva tu código a producción. Sin intervención manual.</p>
+    <div class="tags">
+      <span class="tag green">Tekton Pipelines</span>
+      <span class="tag">ArgoCD</span>
+      <span class="tag purple">GitOps</span>
+      <span class="tag yellow">Kaniko</span>
+      <span class="tag green">Docker Hub</span>
+    </div>
+  </div>
+
+  <!-- ══════════════════════════════════════════════
+       SLIDE 2 — AGENDA
+  ══════════════════════════════════════════════ -->
+  <div class="slide slide-content">
+    <div class="slide-header">Agenda de hoy</div>
+    <div class="cols">
+      <div>
+        <ul class="step-list">
+          <li><span class="step-num">1</span><div><strong>¿Qué es GitOps?</strong><br><span style="color:var(--muted);font-size:14px">Principios y por qué importa</span></div></li>
+          <li><span class="step-num">2</span><div><strong>Arquitectura del lab</strong><br><span style="color:var(--muted);font-size:14px">Tekton CI + ArgoCD CD + NFS</span></div></li>
+          <li><span class="step-num">3</span><div><strong>Instalar Tekton</strong><br><span style="color:var(--muted);font-size:14px">Tasks, Pipeline, PipelineRun</span></div></li>
+          <li><span class="step-num green">4</span><div><strong>Build v1 en vivo</strong><br><span style="color:var(--muted);font-size:14px">Kaniko construye y pushea a Docker Hub</span></div></li>
+        </ul>
+      </div>
+      <div>
+        <ul class="step-list">
+          <li><span class="step-num">5</span><div><strong>Instalar ArgoCD</strong><br><span style="color:var(--muted);font-size:14px">Application, selfHeal, prune</span></div></li>
+          <li><span class="step-num purple">6</span><div><strong>Demo v1 → v2</strong><br><span style="color:var(--muted);font-size:14px">git push → pipeline → ArgoCD → app</span></div></li>
+          <li><span class="step-num purple">7</span><div><strong>Rollback desde UI</strong><br><span style="color:var(--muted);font-size:14px">Sin tocar el cluster</span></div></li>
+          <li><span class="step-num green">8</span><div><strong>Lab alumnos</strong><br><span style="color:var(--muted);font-size:14px">Ciclo completo en su propia imagen</span></div></li>
+        </ul>
+      </div>
+    </div>
+  </div>
+
+  <!-- ══════════════════════════════════════════════
+       SLIDE 3 — SECCIÓN: GITOPS
+  ══════════════════════════════════════════════ -->
+  <div class="slide slide-section">
+    <div class="section-num">01</div>
+    <h2>¿Qué es GitOps?</h2>
+    <p>Git como única fuente de verdad para infraestructura y aplicaciones</p>
+  </div>
+
+  <!-- ══════════════════════════════════════════════
+       SLIDE 4 — GITOPS PRINCIPIOS
+  ══════════════════════════════════════════════ -->
+  <div class="slide slide-content">
+    <div class="slide-header">Los 4 principios de <span>GitOps</span></div>
+    <div class="cols c3" style="grid-template-columns:1fr 1fr; gap:20px;">
+      <div class="card accent-blue">
+        <h3>📁 Declarativo</h3>
+        <p>El estado deseado del sistema se describe en archivos YAML. <strong>No scripts. No comandos.</strong> Archivos versionados.</p>
+      </div>
+      <div class="card accent-green">
+        <h3>🔢 Versionado</h3>
+        <p>Git es el único lugar donde vive la verdad. Cada cambio tiene historial, autor, fecha. <strong>Rollback = revert commit.</strong></p>
+      </div>
+      <div class="card accent-purple">
+        <h3>🤖 Automatizado</h3>
+        <p>Los cambios aprobados en Git <strong>se aplican solos</strong> al cluster. No hace falta hacer <code>kubectl apply</code> manualmente.</p>
+      </div>
+      <div class="card accent-yellow">
+        <h3>🔄 Reconciliado</h3>
+        <p>Un agente (ArgoCD) vigila constantemente que cluster = Git. Si alguien cambia algo a mano, <strong>ArgoCD lo revierte.</strong></p>
+      </div>
+    </div>
+    <div class="callout info" style="margin-top:16px">
+      <strong>Regla de oro:</strong> Si no está en Git, no existe en producción.
+    </div>
+  </div>
+
+  <!-- ══════════════════════════════════════════════
+       SLIDE 5 — GITOPS vs TRADICIONAL
+  ══════════════════════════════════════════════ -->
+  <div class="slide slide-content">
+    <div class="slide-header">GitOps vs CI/CD <span>tradicional</span></div>
+    <table>
+      <thead>
+        <tr><th></th><th>CI/CD Tradicional (Push)</th><th>GitOps (Pull)</th></tr>
+      </thead>
+      <tbody>
+        <tr><td>¿Quién aplica cambios?</td><td>Pipeline hace <code>kubectl apply</code></td><td>ArgoCD detecta y aplica solo</td></tr>
+        <tr><td>Credenciales del cluster</td><td>En el pipeline (riesgo de exposición)</td><td>Solo ArgoCD las tiene</td></tr>
+        <tr><td>Rollback</td><td>Re-ejecutar pipeline con tag anterior</td><td>Revert en Git o clic en UI</td></tr>
+        <tr><td>Drift detection</td><td>No existe</td><td>ArgoCD alerta en segundos</td></tr>
+        <tr><td>Auditoría</td><td>Logs del pipeline</td><td>Historial de Git + ArgoCD</td></tr>
+        <tr><td>¿Alguien cambió algo a mano?</td><td>Nadie lo sabe</td><td>ArgoCD lo revierte (selfHeal)</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <!-- ══════════════════════════════════════════════
+       SLIDE 6 — SECCIÓN: ARQUITECTURA
+  ══════════════════════════════════════════════ -->
+  <div class="slide slide-section">
+    <div class="section-num">02</div>
+    <h2>Arquitectura del lab</h2>
+    <p>Tekton CI + ArgoCD CD + NFS workspace + Docker Hub</p>
+  </div>
+
+  <!-- ══════════════════════════════════════════════
+       SLIDE 7 — FLUJO COMPLETO
+  ══════════════════════════════════════════════ -->
+  <div class="slide slide-content">
+    <div class="slide-header">El flujo completo</div>
+    <div class="flow" style="margin-bottom:20px; gap:8px;">
+      <div class="flow-box blue"><span class="icon">👨‍💻</span>Dev<br>git push</div>
+      <div class="flow-arrow">→</div>
+      <div class="flow-box"><span class="icon">🐙</span>GitHub<br>main</div>
+      <div class="flow-arrow">→</div>
+      <div class="flow-box yellow"><span class="icon">⚙️</span>Tekton<br>Pipeline</div>
+      <div class="flow-arrow">→</div>
+      <div class="flow-box"><span class="icon">🐳</span>Docker Hub<br>:v1 / :v2</div>
+      <div class="flow-arrow">→</div>
+      <div class="flow-box purple"><span class="icon">🔄</span>ArgoCD<br>sync</div>
+      <div class="flow-arrow">→</div>
+      <div class="flow-box green"><span class="icon">🚀</span>Cluster<br>demo ns</div>
+    </div>
+    <div class="cols">
+      <div class="card accent-yellow">
+        <h3>⚙️ CI — Tekton (build)</h3>
+        <ul>
+          <li>Task <strong>git-clone</strong>: clona el repo en workspace NFS</li>
+          <li>Task <strong>build-push</strong>: Kaniko construye la imagen</li>
+          <li>Pushea a Docker Hub como <code>:v1</code> o <code>:v2</code></li>
+        </ul>
+      </div>
+      <div class="card accent-purple">
+        <h3>🔄 CD — ArgoCD (deploy)</h3>
+        <ul>
+          <li>Monitorea <code>k8s/</code> en GitHub cada 3 min</li>
+          <li>Detecta el nuevo tag en <code>deployment.yaml</code></li>
+          <li>Aplica los manifiestos al namespace <code>demo</code></li>
+        </ul>
+      </div>
+    </div>
+  </div>
+
+  <!-- ══════════════════════════════════════════════
+       SLIDE 8 — SEPARACIÓN app/ vs k8s/
+  ══════════════════════════════════════════════ -->
+  <div class="slide slide-content">
+    <div class="slide-header">La separación <span>app/</span> vs <span style="color:var(--accent)">k8s/</span></div>
+    <div class="cols">
+      <div class="card accent-blue">
+        <h3>📝 app/ — El Dev lo toca</h3>
+        <ul>
+          <li><code>index.html</code> — código fuente</li>
+          <li><code>Dockerfile</code> — cómo construir la imagen</li>
+        </ul>
+        <p style="margin-top:12px; color:var(--muted)">Tekton lee esto para construir la imagen.</p>
+      </div>
+      <div class="card accent-green">
+        <h3>🗂️ k8s/ — El Ops lo toca</h3>
+        <ul>
+          <li><code>namespace.yaml</code></li>
+          <li><code>deployment.yaml</code> ← <strong>el tag de imagen</strong></li>
+          <li><code>service.yaml</code></li>
+        </ul>
+        <p style="margin-top:12px; color:var(--muted)">ArgoCD solo mira esta carpeta.</p>
+      </div>
+    </div>
+    <div class="callout warn" style="margin-top:20px">
+      <strong>⚠️ Regla crítica:</strong> Si el Dev cambia <code>app/index.html</code> pero NO actualiza el tag en <code>k8s/deployment.yaml</code>, ArgoCD <strong>no despliega nada</strong>. El tag es la señal.
+    </div>
+  </div>
+
+  <!-- ══════════════════════════════════════════════
+       SLIDE 9 — SECCIÓN: TEKTON
+  ══════════════════════════════════════════════ -->
+  <div class="slide slide-section">
+    <div class="section-num">03</div>
+    <h2>Tekton Pipelines</h2>
+    <p>CI nativo de Kubernetes — construye imágenes dentro del cluster</p>
+  </div>
+
+  <!-- ══════════════════════════════════════════════
+       SLIDE 10 — COMPONENTES TEKTON
+  ══════════════════════════════════════════════ -->
+  <div class="slide slide-content">
+    <div class="slide-header">Componentes de <span>Tekton</span></div>
+    <div class="cols">
+      <ul class="step-list">
+        <li><span class="step-num">T</span><div><strong>Task</strong><br><span style="color:var(--muted);font-size:14px">Unidad mínima. Define Steps (contenedores). Tiene Inputs, Outputs y Workspaces.</span></div></li>
+        <li><span class="step-num">P</span><div><strong>Pipeline</strong><br><span style="color:var(--muted);font-size:14px">Encadena Tasks en orden. Comparte Workspaces entre ellas. Define params globales.</span></div></li>
+        <li><span class="step-num green">PR</span><div><strong>PipelineRun</strong><br><span style="color:var(--muted);font-size:14px">Instancia de ejecución. Aporta los valores reales de params y crea el PVC para el workspace.</span></div></li>
+      </ul>
+      <div>
+        <pre><span class="cm"># Una Task: dos Steps</span>
+<span class="kw">apiVersion:</span> <span class="str">tekton.dev/v1beta1</span>
+<span class="kw">kind:</span> <span class="hi2">Task</span>
+<span class="kw">spec:</span>
+  <span class="kw">workspaces:</span>
+    - <span class="kw">name:</span> source
+  <span class="kw">steps:</span>
+    - <span class="kw">name:</span> git-clone
+      <span class="kw">image:</span> alpine/git
+    - <span class="kw">name:</span> build
+      <span class="kw">image:</span> <span class="hi">gcr.io/kaniko-project/executor</span></pre>
+        <div class="callout info" style="margin-top:12px; font-size:14px">
+          Cada Step es un <strong>contenedor independiente</strong>. El Workspace (PVC NFS) los conecta.
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ══════════════════════════════════════════════
+       SLIDE 11 — KANIKO
+  ══════════════════════════════════════════════ -->
+  <div class="slide slide-content">
+    <div class="slide-header">¿Por qué <span>Kaniko</span>?</div>
+    <div class="cols">
+      <div>
+        <div class="card accent-blue" style="margin-bottom:16px">
+          <h3>❌ El problema</h3>
+          <p>Construir imágenes Docker dentro de Kubernetes requiere acceso al Docker socket (<code>/var/run/docker.sock</code>). Eso exige privilegios de root en el nodo — <strong>inaceptable en producción.</strong></p>
+        </div>
+        <div class="card accent-green">
+          <h3>✅ La solución: Kaniko</h3>
+          <p>Construye imágenes desde un <strong>Dockerfile en userspace</strong>, sin Docker daemon. No necesita acceso al socket. Funciona como un contenedor normal en Kubernetes.</p>
+        </div>
+      </div>
+      <div>
+        <pre><span class="cm"># Task build-push usa Kaniko</span>
+<span class="kw">steps:</span>
+  - <span class="kw">name:</span> build-and-push
+    <span class="kw">image:</span> <span class="hi">gcr.io/kaniko-project/executor:latest</span>
+    <span class="kw">args:</span>
+      - --dockerfile=<span class="str">$(workspaces.source.path)/app/Dockerfile</span>
+      - --context=<span class="str">$(workspaces.source.path)/app</span>
+      - --destination=<span class="str">$(params.image)</span>
+    <span class="kw">volumeMounts:</span>
+      - <span class="kw">name:</span> docker-credentials
+        <span class="kw">mountPath:</span> <span class="str">/kaniko/.docker</span></pre>
+        <div class="callout warn" style="margin-top:12px; font-size:14px">
+          <strong>⚠️ PodSecurity:</strong> El namespace <code>tekton-pipelines</code> debe tener la label <code>enforce=privileged</code> o Kaniko no arranca.
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ══════════════════════════════════════════════
+       SLIDE 12 — WORKSPACE NFS
+  ══════════════════════════════════════════════ -->
+  <div class="slide slide-content">
+    <div class="slide-header">El <span>Workspace compartido</span> — NFS PVC</div>
+    <div class="flow" style="flex-direction:column; gap:12px; padding:24px;">
+      <div style="display:flex; align-items:center; gap:16px; width:100%;">
+        <div class="flow-box blue" style="min-width:160px">⚙️ Task: clone<br><small>Pod 1</small></div>
+        <div class="flow-arrow" style="font-size:14px; flex:1; text-align:center;">escribe código → <code>/workspace/source</code></div>
+        <div class="flow-box" style="min-width:160px; border-color:var(--yellow); color:var(--yellow)">📦 PVC NFS<br><small>500Mi nfs-csi</small></div>
+      </div>
+      <div style="display:flex; align-items:center; gap:16px; width:100%;">
+        <div class="flow-box green" style="min-width:160px">🔨 Task: build-push<br><small>Pod 2</small></div>
+        <div class="flow-arrow" style="font-size:14px; flex:1; text-align:center;">lee código desde → <code>/workspace/source</code></div>
+        <div class="flow-box" style="min-width:160px; border-color:var(--yellow); color:var(--yellow)">📦 PVC NFS<br><small>mismo PVC</small></div>
+      </div>
+    </div>
+    <div class="callout info" style="margin-top:16px">
+      <strong>¿Por qué NFS y no emptyDir?</strong> Cada Task corre en un Pod diferente en nodos diferentes. emptyDir vive solo en un nodo. NFS es accesible desde cualquier nodo del cluster — por eso el PVC usa <code>storageClassName: nfs-csi</code>.
+    </div>
+  </div>
+
+  <!-- ══════════════════════════════════════════════
+       SLIDE 13 — DEMO: INSTALAR TEKTON
+  ══════════════════════════════════════════════ -->
+  <div class="slide slide-demo">
+    <div class="demo-label">🛠️ Demo en vivo</div>
+    <div class="demo-title">Instalar Tekton</div>
+    <pre style="max-width:720px; font-size:13px;">
+<span class="cm"># 1. Instalar Tekton Pipelines</span>
+kubectl apply -f https://storage.googleapis.com/tekton-releases/pipeline/latest/release.yaml
+kubectl get pods -n tekton-pipelines --watch
+
+<span class="cm"># 2. ⚠️ CRÍTICO: etiquetar namespace (PodSecurity)</span>
+kubectl label namespace tekton-pipelines \
+  pod-security.kubernetes.io/enforce=<span class="hi">privileged</span> --overwrite
+
+<span class="cm"># 3. Instalar CLI tkn</span>
+curl -LO https://github.com/tektoncd/cli/releases/download/v0.35.0/tkn_0.35.0_Linux_x86_64.tar.gz
+tar xzf tkn_0.35.0_Linux_x86_64.tar.gz -C /usr/local/bin tkn
+tkn version
+
+<span class="cm"># 4. Secret Docker Hub</span>
+kubectl create secret docker-registry docker-credentials \
+  --docker-server=https://index.docker.io/v1/ \
+  --docker-username=<span class="hi2">TU_USUARIO</span> \
+  --docker-password=<span class="hi2">TU_TOKEN</span> \
+  -n tekton-pipelines</pre>
+  </div>
+
+  <!-- ══════════════════════════════════════════════
+       SLIDE 14 — DEMO: BUILD V1
+  ══════════════════════════════════════════════ -->
+  <div class="slide slide-demo">
+    <div class="demo-label">🚀 Demo en vivo</div>
+    <div class="demo-title">Lanzar Pipeline v1</div>
+    <pre style="max-width:720px; font-size:13px;">
+<span class="cm"># Aplicar Tasks y Pipeline</span>
+kubectl apply -f tekton/02-task-git-clone.yaml
+kubectl apply -f tekton/03-task-build-push.yaml
+kubectl apply -f tekton/04-pipeline.yaml
+
+<span class="cm"># Lanzar el PipelineRun v1</span>
+kubectl apply -f tekton/<span class="hi">05-pipelinerun-v1.yaml</span>
+
+<span class="cm"># Ver logs en tiempo real</span>
+tkn pipelinerun logs <span class="hi2">build-and-deploy-v1</span> -f -n tekton-pipelines
+
+<span class="cm"># Mientras corre, ver los pods que crea</span>
+kubectl get pods -n tekton-pipelines -w
+
+<span class="cm"># Al terminar, verificar en Docker Hub:</span>
+<span class="cm"># hub.docker.com/r/guerrero11dan/page-public-demo/tags</span></pre>
+    <div class="callout success" style="max-width:720px; margin-top:12px;">
+      ✅ Esperamos ver: <code>INFO Pushing image to guerrero11dan/page-public-demo:v1</code>
+    </div>
+  </div>
+
+  <!-- ══════════════════════════════════════════════
+       SLIDE 15 — SECCIÓN: ARGOCD
+  ══════════════════════════════════════════════ -->
+  <div class="slide slide-section">
+    <div class="section-num">04</div>
+    <h2>ArgoCD</h2>
+    <p>CD declarativo — el cluster siempre igual a Git</p>
+  </div>
+
+  <!-- ══════════════════════════════════════════════
+       SLIDE 16 — ARGOCD CONCEPTOS
+  ══════════════════════════════════════════════ -->
+  <div class="slide slide-content">
+    <div class="slide-header">ArgoCD — <span>Conceptos clave</span></div>
+    <div class="cols">
+      <ul class="step-list">
+        <li><span class="step-num purple">A</span><div><strong>Application</strong><br><span style="color:var(--muted);font-size:14px">Objeto de ArgoCD que vincula un repo Git con un namespace del cluster. Define <em>qué</em> monitorear y <em>dónde</em> desplegarlo.</span></div></li>
+        <li><span class="step-num purple">S</span><div><strong>selfHeal: true</strong><br><span style="color:var(--muted);font-size:14px">Si alguien hace <code>kubectl delete deployment</code> manualmente, ArgoCD lo restaura en ~10 segundos.</span></div></li>
+        <li><span class="step-num purple">P</span><div><strong>prune: true</strong><br><span style="color:var(--muted);font-size:14px">Si un archivo se borra de Git, ArgoCD borra el recurso del cluster. Git = fuente de verdad absoluta.</span></div></li>
+      </ul>
+      <div>
+        <pre style="font-size:13px;"><span class="kw">spec:</span>
+  <span class="kw">source:</span>
+    <span class="kw">repoURL:</span> <span class="str">https://github.com/...</span>
+    <span class="kw">path:</span> <span class="hi">k8s</span>          <span class="cm"># ← solo mira esta carpeta</span>
+    <span class="kw">targetRevision:</span> main
+  <span class="kw">destination:</span>
+    <span class="kw">namespace:</span> <span class="hi2">demo</span>
+  <span class="kw">syncPolicy:</span>
+    <span class="kw">automated:</span>
+      <span class="kw">prune:</span> <span class="hi">true</span>
+      <span class="kw">selfHeal:</span> <span class="hi">true</span>
+    <span class="kw">syncOptions:</span>
+      - <span class="hi3">CreateNamespace=true</span></pre>
+        <div class="callout warn" style="margin-top:12px; font-size:14px">
+          <strong>prune: true</strong> — si borras un YAML de Git, ArgoCD destruye el recurso del cluster. Úsalo con cuidado en producción.
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ══════════════════════════════════════════════
+       SLIDE 17 — DEMO: INSTALAR ARGOCD
+  ══════════════════════════════════════════════ -->
+  <div class="slide slide-demo">
+    <div class="demo-label">🛠️ Demo en vivo</div>
+    <div class="demo-title">Instalar ArgoCD</div>
+    <pre style="max-width:720px; font-size:13px;">
+<span class="cm"># 1. Instalar</span>
+kubectl create namespace argocd
+kubectl apply -n argocd -f \
+  https://raw.githubusercontent.com/argoproj/argo-cd/stable/manifests/install.yaml
+kubectl get pods -n argocd --watch
+
+<span class="cm"># 2. Exponer con NodePort</span>
+kubectl patch svc argocd-server -n argocd \
+  -p '{"spec":{"type":"NodePort","ports":[{"port":443,"nodePort":<span class="hi">30443</span>,"targetPort":8080,"protocol":"TCP","name":"https"}]}}'
+
+<span class="cm"># 3. Obtener contraseña</span>
+kubectl -n argocd get secret argocd-initial-admin-secret \
+  -o jsonpath="{.data.password}" | base64 -d && echo
+
+<span class="cm"># 4. Abrir en el navegador</span>
+<span class="cm"># https://192.168.109.143:30443</span>
+<span class="cm"># Usuario: admin  |  Password: (el del paso anterior)</span></pre>
+  </div>
+
+  <!-- ══════════════════════════════════════════════
+       SLIDE 18 — DEMO: APPLICATION
+  ══════════════════════════════════════════════ -->
+  <div class="slide slide-demo">
+    <div class="demo-label">🛠️ Demo en vivo</div>
+    <div class="demo-title">Crear la Application</div>
+    <pre style="max-width:720px; font-size:13px;">
+<span class="cm"># Aplicar la Application de ArgoCD</span>
+kubectl apply -f argocd/application.yaml
+
+<span class="cm"># Verificar estado</span>
+kubectl get application -n argocd
+<span class="cm"># SYNC STATUS:   Synced</span>
+<span class="cm"># HEALTH STATUS: Healthy</span>
+
+<span class="cm"># Ver los pods que ArgoCD desplegó</span>
+kubectl get pods -n demo
+kubectl get svc -n demo
+
+<span class="cm"># Acceder a la app</span>
+<span class="cm"># http://192.168.109.143:31080  → badge v1.0.0 verde</span></pre>
+    <div class="callout success" style="max-width:720px; margin-top:12px;">
+      🎯 ArgoCD leyó <code>k8s/deployment.yaml</code>, encontró la imagen <code>:v1</code> y desplegó 2 pods automáticamente.
+    </div>
+  </div>
+
+  <!-- ══════════════════════════════════════════════
+       SLIDE 19 — SECCIÓN: DEMO V1→V2
+  ══════════════════════════════════════════════ -->
+  <div class="slide slide-section">
+    <div class="section-num">05</div>
+    <h2>Demo en vivo — v1 → v2</h2>
+    <p>El ciclo GitOps completo con un solo <code>git push</code></p>
+  </div>
+
+  <!-- ══════════════════════════════════════════════
+       SLIDE 20 — PASOS V1→V2
+  ══════════════════════════════════════════════ -->
+  <div class="slide slide-content">
+    <div class="slide-header">El ciclo <span>v1 → v2</span> paso a paso</div>
+    <ul class="step-list">
+      <li><span class="step-num">1</span><div><strong>Modificar la app</strong> — cambiar <code>app/index.html</code><br><span style="color:var(--muted);font-size:14px"><code>v1.0.0 → v2.0.0</code> y color verde → azul (<code>#238636 → #1f6feb</code>)</span></div></li>
+      <li><span class="step-num">2</span><div><strong>Actualizar el tag en k8s/</strong> — editar <code>k8s/deployment.yaml</code><br><span style="color:var(--muted);font-size:14px"><code>image: guerrero11dan/page-public-demo:v1 → :v2</code></span></div></li>
+      <li><span class="step-num">3</span><div><strong>Commit + push</strong><br><span style="color:var(--muted);font-size:14px"><code>git add . && git commit -m "feat: v2" && git push</code></span></div></li>
+      <li><span class="step-num yellow" style="background:var(--yellow)">4</span><div><strong>Lanzar PipelineRun v2</strong><br><span style="color:var(--muted);font-size:14px"><code>kubectl apply -f tekton/05-pipelinerun-v2.yaml</code> → Kaniko construye y pushea <code>:v2</code></span></div></li>
+      <li><span class="step-num purple">5</span><div><strong>ArgoCD detecta el cambio</strong> (hasta 3 min o Sync manual)<br><span style="color:var(--muted);font-size:14px">Lee <code>deployment.yaml</code> → ve <code>:v2</code> → despliega automáticamente</span></div></li>
+      <li><span class="step-num green">6</span><div><strong>Verificar en el navegador</strong><br><span style="color:var(--muted);font-size:14px"><code>http://192.168.109.143:31080</code> → badge azul v2.0.0</span></div></li>
+    </ul>
+  </div>
+
+  <!-- ══════════════════════════════════════════════
+       SLIDE 21 — PREGUNTA CLAVE
+  ══════════════════════════════════════════════ -->
+  <div class="slide" style="background: radial-gradient(ellipse at 50% 50%, #1a0e3d 0%, var(--bg) 70%); justify-content:center; align-items:center; text-align:center;">
+    <p class="big-q">¿Cuántos <code>kubectl apply</code><br>hicimos para desplegar la nueva versión?</p>
+    <p style="font-size:64px; margin-bottom:16px;">🤔</p>
+    <div class="callout success" style="max-width:500px; font-size:20px; text-align:center;">
+      <strong>Cero.</strong> Solo un <code>git push</code>.
+    </div>
+  </div>
+
+  <!-- ══════════════════════════════════════════════
+       SLIDE 22 — SECCIÓN: SELFHEAL + ROLLBACK
+  ══════════════════════════════════════════════ -->
+  <div class="slide slide-section">
+    <div class="section-num">06</div>
+    <h2>selfHeal + Rollback</h2>
+    <p>El cluster siempre vuelve a lo que dice Git</p>
+  </div>
+
+  <!-- ══════════════════════════════════════════════
+       SLIDE 23 — SELFHEAL DEMO
+  ══════════════════════════════════════════════ -->
+  <div class="slide slide-demo">
+    <div class="demo-label">💥 Demo en vivo — selfHeal</div>
+    <div class="demo-title">¿Qué pasa si borro algo a mano?</div>
+    <pre style="max-width:720px; font-size:13px;">
+<span class="cm"># Escenario 1: borrar un pod</span>
+kubectl delete pod -l app=page-demo -n demo
+kubectl get pods -n demo -w
+<span class="cm"># ArgoCD lo restaura en ~10 segundos</span>
+
+<span class="cm"># Escenario 2: borrar el Deployment completo</span>
+kubectl delete deployment page-demo -n demo
+kubectl get deployment -n demo -w
+<span class="cm"># ArgoCD lo restaura en ~10 segundos</span>
+
+<span class="cm"># Escenario 3: cambiar replicas a mano</span>
+kubectl scale deployment page-demo -n demo --replicas=5
+kubectl get pods -n demo -w
+<span class="cm"># ArgoCD lo revierte a 2 réplicas (lo que dice Git)</span></pre>
+    <div class="callout info" style="max-width:720px; margin-top:12px;">
+      <strong>selfHeal: true</strong> — ArgoCD es el guardián. Lo que no está en Git, no sobrevive.
+    </div>
+  </div>
+
+  <!-- ══════════════════════════════════════════════
+       SLIDE 24 — ROLLBACK
+  ══════════════════════════════════════════════ -->
+  <div class="slide slide-content">
+    <div class="slide-header">Rollback — <span>3 formas</span></div>
+    <div class="cols c3" style="grid-template-columns:1fr 1fr 1fr; gap:16px;">
+      <div class="card accent-purple">
+        <h3>🖱️ ArgoCD UI</h3>
+        <p style="font-size:13px; margin-bottom:8px;"><span class="badge blue">GitOps puro</span></p>
+        <ol style="font-size:13px; color:var(--muted); padding-left:16px; line-height:2;">
+          <li>page-demo</li>
+          <li>HISTORY AND ROLLBACK</li>
+          <li>Seleccionar commit v1</li>
+          <li>Rollback → OK</li>
+        </ol>
+      </div>
+      <div class="card accent-green">
+        <h3>📝 Git revert</h3>
+        <p style="font-size:13px; margin-bottom:8px;"><span class="badge green">Recomendado</span></p>
+        <pre style="font-size:11px; padding:10px;">git revert HEAD
+git push
+<span class="cm"># ArgoCD sync automático</span></pre>
+      </div>
+      <div class="card" style="border-top:3px solid var(--red);">
+        <h3>⚡ kubectl rollout</h3>
+        <p style="font-size:13px; margin-bottom:8px;"><span class="badge red">No GitOps</span></p>
+        <pre style="font-size:11px; padding:10px;">kubectl rollout undo \
+  deployment/page-demo \
+  -n demo
+<span class="cm"># ArgoCD revertirá de vuelta</span></pre>
+        <p style="font-size:12px; color:var(--red); margin-top:8px;">selfHeal lo deshace en ~10s</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- ══════════════════════════════════════════════
+       SLIDE 25 — SECCIÓN: TROUBLESHOOTING
+  ══════════════════════════════════════════════ -->
+  <div class="slide slide-section">
+    <div class="section-num">07</div>
+    <h2>Troubleshooting</h2>
+    <p>Errores reales encontrados en este lab</p>
+  </div>
+
+  <!-- ══════════════════════════════════════════════
+       SLIDE 26 — ERRORES REALES
+  ══════════════════════════════════════════════ -->
+  <div class="slide slide-content">
+    <div class="slide-header">Errores reales del <span>lab</span></div>
+    <table>
+      <thead>
+        <tr><th>Error</th><th>Causa</th><th>Solución</th></tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>Pods en <code>Pending</code> (Tekton)</td>
+          <td>PodSecurity <code>restricted</code> bloquea Kaniko</td>
+          <td><code>kubectl label ns tekton-pipelines enforce=privileged</code></td>
+        </tr>
+        <tr>
+          <td><code>cannot use generate name with apply</code></td>
+          <td><code>generateName</code> no funciona con <code>apply</code></td>
+          <td>Usar <code>metadata.name</code> fijo en el YAML</td>
+        </tr>
+        <tr>
+          <td>git push rechazado</td>
+          <td>GitHub eliminó auth por contraseña</td>
+          <td>Token PAT en la URL del remote</td>
+        </tr>
+        <tr>
+          <td>ArgoCD UI no carga</td>
+          <td>firewalld bloquea puerto 30443</td>
+          <td><code>firewall-cmd --add-port=30443/tcp --permanent</code></td>
+        </tr>
+        <tr>
+          <td>ArgoCD no sincroniza</td>
+          <td>El namespace <code>demo</code> no existe</td>
+          <td><code>syncOptions: CreateNamespace=true</code></td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <!-- ══════════════════════════════════════════════
+       SLIDE 27 — SECCIÓN: LAB ALUMNOS
+  ══════════════════════════════════════════════ -->
+  <div class="slide slide-section">
+    <div class="section-num">08</div>
+    <h2>Lab — Alumnos</h2>
+    <p>70 minutos · Ciclo GitOps completo con tu propia imagen</p>
+  </div>
+
+  <!-- ══════════════════════════════════════════════
+       SLIDE 28 — LAB INSTRUCCIONES
+  ══════════════════════════════════════════════ -->
+  <div class="slide slide-content">
+    <div class="slide-header">Lab — Lo que vas a construir</div>
+    <div class="cols">
+      <ul class="step-list">
+        <li><span class="step-num">1</span><div><strong>Clonar el repo y crear tu rama</strong><br><code style="font-size:13px;">git checkout -b alumno-tunombre</code></div></li>
+        <li><span class="step-num">2</span><div><strong>Personalizar app/index.html</strong><br><span style="color:var(--muted);font-size:13px">Cambia título, colores, tu nombre en el footer</span></div></li>
+        <li><span class="step-num">3</span><div><strong>Crear Secret Docker Hub</strong><br><span style="color:var(--muted);font-size:13px">Con tu usuario y token personal</span></div></li>
+        <li><span class="step-num green">4</span><div><strong>Actualizar YAMLs con tu imagen</strong><br><code style="font-size:13px;">TU_USUARIO/page-demo:v1</code></div></li>
+      </ul>
+      <ul class="step-list">
+        <li><span class="step-num">5</span><div><strong>Aplicar Tasks + Pipeline</strong><br><code style="font-size:13px;">kubectl apply -f tekton/</code></div></li>
+        <li><span class="step-num">6</span><div><strong>Lanzar PipelineRun v1</strong><br><span style="color:var(--muted);font-size:13px">Ver logs y verificar en Docker Hub</span></div></li>
+        <li><span class="step-num purple">7</span><div><strong>Crear Application ArgoCD</strong><br><span style="color:var(--muted);font-size:13px">Nombre: <code>page-demo-tunombre</code></span></div></li>
+        <li><span class="step-num purple">8</span><div><strong>Ciclo v1 → v2 completo</strong><br><span style="color:var(--muted);font-size:13px">Modificar, push, pipeline, ArgoCD sync</span></div></li>
+      </ul>
+    </div>
+    <div class="callout info" style="margin-top:12px">
+      📖 Toda la guía está en el README del repo: <strong>github.com/dguerrero11/page-public-demo</strong>
+    </div>
+  </div>
+
+  <!-- ══════════════════════════════════════════════
+       SLIDE 29 — PREGUNTAS DE CIERRE
+  ══════════════════════════════════════════════ -->
+  <div class="slide slide-content">
+    <div class="slide-header">Preguntas de <span>cierre</span></div>
+    <ul class="step-list">
+      <li><span class="step-num purple">?</span><div><strong>¿Cuál es la diferencia entre Tekton y ArgoCD?</strong><br><span style="color:var(--muted);font-size:14px">¿Pueden usarse sin el otro?</span></div></li>
+      <li><span class="step-num purple">?</span><div><strong>¿Por qué el workspace necesita NFS y no emptyDir?</strong><br><span style="color:var(--muted);font-size:14px">¿Qué pasaría si los dos pods caen en nodos distintos?</span></div></li>
+      <li><span class="step-num purple">?</span><div><strong>Si borro un Deployment que ArgoCD gestiona, ¿qué pasa?</strong><br><span style="color:var(--muted);font-size:14px">¿En cuántos segundos lo restaura?</span></div></li>
+      <li><span class="step-num purple">?</span><div><strong>¿Qué significa <code>prune: true</code>? ¿Qué riesgo tiene?</strong><br><span style="color:var(--muted);font-size:14px">¿Cuándo NO lo usarías en producción?</span></div></li>
+      <li><span class="step-num purple">?</span><div><strong>¿Por qué el Secret de Docker Hub no se commitea a Git?</strong><br><span style="color:var(--muted);font-size:14px">¿Cómo lo gestionarías en un entorno real?</span></div></li>
+    </ul>
+  </div>
+
+  <!-- ══════════════════════════════════════════════
+       SLIDE 30 — CIERRE
+  ══════════════════════════════════════════════ -->
+  <div class="slide slide-close" style="background: radial-gradient(ellipse at 50% 40%, #0e2a1a 0%, var(--bg) 70%);">
+    <div class="close-icon">🚀</div>
+    <h2>Clase 4 completada</h2>
+    <p style="color:var(--muted); font-size:18px; margin-bottom:32px;">
+      CI/CD GitOps con Tekton + ArgoCD
+    </p>
+    <div class="cols" style="max-width:800px; gap:16px;">
+      <div class="card accent-green">
+        <h3>✅ Lo que construimos</h3>
+        <ul style="font-size:13px; line-height:2;">
+          <li>Pipeline Tekton con Kaniko</li>
+          <li>ArgoCD con selfHeal + prune</li>
+          <li>Ciclo completo v1 → v2</li>
+          <li>Rollback desde UI</li>
+        </ul>
+      </div>
+      <div class="card accent-blue">
+        <h3>➡️ Próxima clase</h3>
+        <p style="font-size:13px; color:var(--muted);">
+          <strong>Clase 5:</strong> Observabilidad avanzada<br>
+          Distributed Tracing con Jaeger,<br>
+          NetworkPolicy y seguridad de red
+        </p>
+      </div>
+    </div>
+    <p style="color:var(--muted); font-size:14px; margin-top:32px;">
+      Repo: <strong>github.com/dguerrero11/page-public-demo</strong>
+    </p>
+  </div>
+
+</div><!-- /deck -->
+
+<nav class="nav">
+  <button onclick="prev()">← Prev</button>
+  <span id="counter">1 / 30</span>
+  <button onclick="next()">Next →</button>
+  <span style="margin-left:8px; font-size:11px; opacity:.5">← → o espace</span>
+</nav>
+
+<script>
+  const slides = document.querySelectorAll('.slide');
+  let cur = 0;
+
+  function show(n) {
+    slides[cur].classList.remove('active');
+    cur = Math.max(0, Math.min(n, slides.length - 1));
+    slides[cur].classList.add('active');
+    document.getElementById('counter').textContent = (cur + 1) + ' / ' + slides.length;
+    document.getElementById('progress').style.width = ((cur + 1) / slides.length * 100) + '%';
+  }
+
+  function next() { show(cur + 1); }
+  function prev() { show(cur - 1); }
+
+  document.addEventListener('keydown', e => {
+    if (e.key === 'ArrowRight' || e.key === ' ' || e.key === 'ArrowDown') { e.preventDefault(); next(); }
+    if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') { e.preventDefault(); prev(); }
+    if (e.key === 'Home') show(0);
+    if (e.key === 'End') show(slides.length - 1);
+  });
+
+  // Touch swipe
+  let tx = 0;
+  document.addEventListener('touchstart', e => { tx = e.touches[0].clientX; });
+  document.addEventListener('touchend', e => {
+    const dx = e.changedTouches[0].clientX - tx;
+    if (Math.abs(dx) > 50) dx < 0 ? next() : prev();
+  });
+
+  show(0);
+</script>
+</body>
+</html>
