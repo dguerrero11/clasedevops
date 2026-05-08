@@ -2,7 +2,9 @@
 
 ## Objetivo
 
-Implementar un pipeline GitOps completo: Tekton construye y publica la imagen de contenedor, ArgoCD detecta los cambios en Git y despliega automáticamente. Al terminar, un `git push` es el único comando necesario para llevar código a producción.
+Implementar un pipeline GitOps completo: Tekton construye y publica la imagen de
+contenedor, ArgoCD detecta los cambios en Git y despliega automáticamente.
+Al terminar, un `git push` es el único comando necesario para llevar código a producción.
 
 ---
 
@@ -34,14 +36,14 @@ Implementar un pipeline GitOps completo: Tekton construye y publica la imagen de
   │  └──────────────┘  PVC    └──────────────────┘        │
   └──────────────────────────────────────────────────────┘
                                         │
-                                        │ imagen:v2 pusheada
+                                        │ imagen:v1 pusheada
                                         ▼
   ┌──────────────────────────────────────────────────────┐
   │               Namespace: argocd                       │
   │                                                        │
   │  ArgoCD Application "mi-tienda"                       │
   │  ┌──────────────────────────────────────────────┐     │
-  │  │ repoURL: github.com/usuario/k8s-gitops-demo  │     │
+  │  │ repoURL: github.com/usuario/mi-repo          │     │
   │  │ path: k8s/                                   │     │
   │  │ syncPolicy: automated + selfHeal + prune     │     │
   │  └──────────────────────────────────────────────┘     │
@@ -49,7 +51,7 @@ Implementar un pipeline GitOps completo: Tekton construye y publica la imagen de
   └──────────────┼───────────────────────────────────────┘
                  │ kubectl apply
                  ▼
-          Namespace: default
+          Namespace: demo
           Deployment "mi-tienda"
 ```
 
@@ -58,13 +60,27 @@ Implementar un pipeline GitOps completo: Tekton construye y publica la imagen de
 ## Pre-requisitos
 
 ### Cluster
-- Tekton Pipelines instalado
 - StorageClass `nfs-csi` disponible (workspace del Pipeline)
-- ArgoCD instalado en namespace `argocd`
 
-### Alumno
-- Cuenta en GitHub con repo `k8s-gitops-demo` (público)
-- Cuenta en Docker Hub con token de acceso
+```bash
+kubectl get storageclass nfs-csi
+```
+
+### Puertos firewall (Rocky Linux 9)
+
+```bash
+# ArgoCD UI
+ansible all -i /root/kubernetes/ansible-k8s/inventory/hosts.ini \
+  -m firewalld -a "port=30443/tcp permanent=yes state=enabled immediate=yes" --become
+
+# App desplegada
+ansible all -i /root/kubernetes/ansible-k8s/inventory/hosts.ini \
+  -m firewalld -a "port=31080/tcp permanent=yes state=enabled immediate=yes" --become
+```
+
+### Cuentas necesarias
+- GitHub: repo público + Personal Access Token (PAT)
+- Docker Hub: usuario + token de acceso
 
 ---
 
@@ -75,6 +91,7 @@ kubectl apply -f https://storage.googleapis.com/tekton-releases/pipeline/latest/
 
 # Esperar a que todos los pods estén Running (~2 min)
 kubectl get pods -n tekton-pipelines --watch
+# Ctrl+C cuando todos estén Running
 ```
 
 Instalar CLI:
@@ -84,16 +101,37 @@ tar xzf tkn_0.35.0_Linux_x86_64.tar.gz -C /usr/local/bin tkn
 tkn version
 ```
 
+### ⚠️ CRÍTICO — Etiquetar namespace con PodSecurity privileged
+
+Kubernetes 1.25+ bloquea los pods de Tekton por defecto. Sin este paso los pods
+quedan en `Pending` con error `violates PodSecurity "restricted:latest"`.
+
+```bash
+kubectl label namespace tekton-pipelines \
+  pod-security.kubernetes.io/enforce=privileged \
+  pod-security.kubernetes.io/warn=privileged \
+  pod-security.kubernetes.io/audit=privileged \
+  --overwrite
+
+# Verificar
+kubectl get namespace tekton-pipelines --show-labels | grep pod-security
+```
+
 ---
 
 ## Paso 2 — Crear Secret de Docker Hub
 
 ```bash
+# Usar token de Docker Hub (NO la contraseña)
+# Generar en: Docker Hub → Account Settings → Security → New Access Token
 kubectl create secret docker-registry docker-credentials \
-  --docker-server=docker.io \
+  --docker-server=https://index.docker.io/v1/ \
   --docker-username=<TU_USUARIO> \
   --docker-password=<TU_TOKEN> \
   -n tekton-pipelines
+
+# Verificar
+kubectl get secret docker-credentials -n tekton-pipelines
 ```
 
 ---
@@ -114,21 +152,40 @@ kubectl get pipelines -n tekton-pipelines
 
 ## Paso 4 — Lanzar el primer PipelineRun
 
-Editar [`pipelinerun-demo.yaml`](pipelinerun-demo.yaml) y reemplazar `USUARIO` con tu usuario de GitHub y Docker Hub:
+Editar `pipelinerun-demo.yaml` con **sed** (no vi) y reemplazar los valores:
 
-```yaml
-params:
-  - name: repo-url
-    value: "https://github.com/TU_USUARIO/k8s-gitops-demo"
-  - name: image
-    value: "TU_USUARIO/mi-tienda:v1"
+```bash
+# Cambiar repo URL
+sed -i 's|https://github.com/USUARIO/mi-repo|https://github.com/TU_USUARIO/TU_REPO|g' pipelinerun-demo.yaml
+
+# Cambiar imagen
+sed -i 's|USUARIO/mi-tienda:v1|TU_USUARIO/mi-tienda:v1|g' pipelinerun-demo.yaml
+
+# Verificar
+grep -E "repo-url|image" pipelinerun-demo.yaml -A1
 ```
 
 ```bash
+# Lanzar
 kubectl apply -f pipelinerun-demo.yaml
 
 # Ver logs en tiempo real
 tkn pipelinerun logs --last -f -n tekton-pipelines
+```
+
+### ⚠️ CRÍTICO — Nombre fijo en PipelineRun
+
+El archivo usa `metadata.name` fijo. **No uses `generateName`** — da error con `kubectl apply`:
+
+```
+error: from build-and-deploy-run-: cannot use generate name with apply
+```
+
+Para relanzar el pipeline, borra el anterior primero:
+
+```bash
+kubectl delete pipelinerun build-and-deploy-run-1 -n tekton-pipelines
+kubectl apply -f pipelinerun-demo.yaml
 ```
 
 ---
@@ -141,14 +198,15 @@ kubectl create namespace argocd
 kubectl apply -n argocd -f \
   https://raw.githubusercontent.com/argoproj/argo-cd/stable/manifests/install.yaml
 
-# Esperar ~3 min
+# Esperar ~3-4 min
 kubectl get pods -n argocd --watch
+# Ctrl+C cuando todos estén Running
 ```
 
 Exponer con NodePort:
 ```bash
 kubectl patch svc argocd-server -n argocd \
-  -p '{"spec":{"type":"NodePort","ports":[{"port":443,"nodePort":30443,"targetPort":8080,"protocol":"TCP"}]}}'
+  -p '{"spec":{"type":"NodePort","ports":[{"port":443,"nodePort":30443,"targetPort":8080,"protocol":"TCP","name":"https"}]}}'
 ```
 
 Obtener contraseña inicial:
@@ -157,13 +215,31 @@ kubectl -n argocd get secret argocd-initial-admin-secret \
   -o jsonpath="{.data.password}" | base64 -d && echo
 ```
 
-UI: `https://<IP-NODO>:30443` | User: `admin`
+UI: `https://<IP-NODO>:30443` | User: `admin` | Pass: (la del comando anterior)
+
+### Instalar CLI de ArgoCD
+
+```bash
+curl -sSL -o /usr/local/bin/argocd \
+  https://github.com/argoproj/argo-cd/releases/latest/download/argocd-linux-amd64
+chmod +x /usr/local/bin/argocd
+
+# Login (necesario antes de cualquier comando argocd)
+argocd login localhost:30443 --insecure --username admin --password <PASSWORD>
+```
 
 ---
 
 ## Paso 6 — Crear la Application
 
-Editar [`argocd-application.yaml`](argocd-application.yaml) con la URL de tu repo y aplicar:
+Editar `argocd-application.yaml` con **sed**:
+
+```bash
+sed -i 's|https://github.com/USUARIO/mi-repo|https://github.com/TU_USUARIO/TU_REPO|g' argocd-application.yaml
+
+# Verificar
+grep repoURL argocd-application.yaml
+```
 
 ```bash
 kubectl apply -f argocd-application.yaml
@@ -175,79 +251,150 @@ kubectl get application -n argocd
 
 ---
 
-## Demo: commit → deploy automático
+## Demo: commit → deploy automático (v1 → v2)
+
+### Paso 1 — Modificar la app con sed (no vi)
 
 ```bash
-# 1. Modificar el código
-vim app/index.html   # cambiar algo visible
+# Cambiar versión y color visible
+sed -i 's/v1\.0\.0/v2.0.0/g' app/index.html
+sed -i 's/#238636/#1f6feb/g' app/index.html
 
-# 2. Actualizar el tag de imagen en el manifiesto
-vim k8s/deployment.yaml  # image: usuario/mi-tienda:v2
+grep -E "v2.0.0|1f6feb" app/index.html
+```
 
-# 3. Push
-git add . && git commit -m "feat: update to v2" && git push
+### Paso 2 — Actualizar el tag en el manifiesto K8s
 
-# 4. Lanzar Pipeline para construir v2
-# (editar pipelinerun-demo.yaml con tag v2 y aplicar de nuevo)
+```bash
+sed -i 's|mi-tienda:v1|mi-tienda:v2|g' k8s/deployment.yaml
+grep image k8s/deployment.yaml
+```
+
+### Paso 3 — Commit y push
+
+```bash
+git add app/index.html k8s/deployment.yaml
+git commit -m "feat: update to v2 - new color and version"
+git push
+```
+
+### Paso 4 — Lanzar Pipeline v2
+
+```bash
+# Borrar run anterior y relanzar con nuevo tag
+kubectl delete pipelinerun build-and-deploy-run-1 -n tekton-pipelines
+sed -i 's|mi-tienda:v1|mi-tienda:v2|g' pipelinerun-demo.yaml
 kubectl apply -f pipelinerun-demo.yaml
 tkn pipelinerun logs --last -f -n tekton-pipelines
+```
 
-# 5. ArgoCD detecta el cambio y sincroniza automáticamente (~3 min)
-# O forzar sync inmediato:
+### Paso 5 — Forzar sync en ArgoCD
+
+```bash
+# Con CLI
 argocd app sync mi-tienda
 
-# 6. Verificar rollout
-kubectl rollout status deployment/mi-tienda
+# Sin CLI (via kubectl)
+kubectl annotate application mi-tienda -n argocd \
+  argocd.argoproj.io/refresh=normal --overwrite
+```
+
+### Paso 6 — Verificar
+
+```bash
+kubectl get pods -n demo
+kubectl get deployment mi-tienda -n demo \
+  -o jsonpath='{.spec.template.spec.containers[0].image}'
+# debe mostrar: USUARIO/mi-tienda:v2
 ```
 
 **Rollback desde ArgoCD UI:**
 ```
-ArgoCD → mi-tienda → History and Rollback → seleccionar revisión anterior → Rollback
+ArgoCD → mi-tienda → HISTORY AND ROLLBACK → seleccionar revisión anterior → Rollback
 ```
 
 ---
 
 ## Troubleshooting
 
-### PipelineRun falla en el paso clone
+### ❌ Pods en Pending — PodSecurity violation
 
-```bash
-tkn taskrun list -n tekton-pipelines
-tkn taskrun logs <nombre-del-taskrun> -n tekton-pipelines
-
-# Verificar que el PVC del workspace se creó
-kubectl get pvc -n tekton-pipelines
+**Síntoma:**
+```
+violates PodSecurity "restricted:latest": allowPrivilegeEscalation != false
 ```
 
-Causas comunes: URL de repo mal escrita, repo privado sin credenciales, `nfs-csi` no disponible.
+**Solución:**
+```bash
+kubectl label namespace tekton-pipelines \
+  pod-security.kubernetes.io/enforce=privileged --overwrite
+```
 
-### Kaniko no puede hacer push
+---
+
+### ❌ `cannot use generate name with apply`
+
+**Síntoma:**
+```
+error: from build-and-deploy-run-: cannot use generate name with apply
+```
+
+**Causa:** El YAML usa `generateName` en vez de `name`.
+
+**Solución:** Usar `metadata.name` fijo (ya corregido en este repo).
+Para relanzar: borrar el pipelinerun anterior con `kubectl delete pipelinerun`.
+
+---
+
+### ❌ `git clone` falla — "could not read Username"
+
+**Síntoma:**
+```
+fatal: could not read Username for 'https://github.com': No such device or address
+```
+
+**Causa:** El repo es privado o no existe en GitHub.
+
+**Solución A** — Usar repo público.
+**Solución B** — Incluir token en la URL:
+```bash
+sed -i 's|https://github.com/USUARIO|https://USUARIO:TOKEN@github.com/USUARIO|g' pipelinerun-demo.yaml
+```
+
+---
+
+### ❌ `argocd app sync` falla — "no session information"
+
+**Síntoma:**
+```
+rpc error: code = Unauthenticated desc = no session information
+```
+
+**Solución:** Hacer login primero:
+```bash
+argocd login localhost:30443 --insecure --username admin --password <PASSWORD>
+```
+
+---
+
+### ❌ App no se actualiza tras reconstruir la misma imagen
+
+**Causa:** Kubernetes no hace pull si el tag no cambió.
+
+**Solución:**
+```bash
+kubectl rollout restart deployment/mi-tienda -n demo
+```
+
+---
+
+### ❌ Kaniko no puede hacer push
 
 ```bash
-# Verificar que el Secret existe
+# Verificar que el Secret existe y tiene el formato correcto
 kubectl get secret docker-credentials -n tekton-pipelines
-
-# Verificar que el Secret tiene el formato correcto
 kubectl get secret docker-credentials -n tekton-pipelines \
   -o jsonpath='{.data.\.dockerconfigjson}' | base64 -d
-```
-
-### ArgoCD muestra OutOfSync pero no sincroniza
-
-```bash
-argocd app get mi-tienda | grep "Sync Policy"
-argocd app get --refresh mi-tienda
-argocd app diff mi-tienda
-```
-
-### ArgoCD no puede acceder al repo de GitHub
-
-```bash
-argocd repo list
-
-# Agregar repo manualmente (si es privado)
-argocd repo add https://github.com/usuario/k8s-gitops-demo \
-  --username <user> --password <token>
 ```
 
 ---
@@ -255,16 +402,25 @@ argocd repo add https://github.com/usuario/k8s-gitops-demo \
 ## Limpieza
 
 ```bash
-kubectl delete -f argocd-application.yaml
+# Borrar app y namespaces
+kubectl delete application mi-tienda -n argocd 2>/dev/null; true
+kubectl delete namespace demo argocd 2>/dev/null; true
+
+# Borrar PipelineRuns (libera PVCs NFS)
+kubectl delete pipelineruns --all -n tekton-pipelines 2>/dev/null; true
+
+# Borrar Tasks, Pipeline y Secret
 kubectl delete -f pipeline-build-deploy.yaml
 kubectl delete -f task-git-clone.yaml
 kubectl delete -f task-build-push.yaml
+kubectl delete secret docker-credentials -n tekton-pipelines 2>/dev/null; true
 
-# Eliminar ArgoCD completo
-kubectl delete namespace argocd
+# Desinstalar Tekton completo
+kubectl delete -f https://storage.googleapis.com/tekton-releases/pipeline/latest/release.yaml 2>/dev/null; true
 
-# Eliminar Tekton completo
-kubectl delete -f https://storage.googleapis.com/tekton-releases/pipeline/latest/release.yaml
+# Verificar limpieza
+kubectl get pvc -n tekton-pipelines
+kubectl get pods -n tekton-pipelines
 ```
 
 ---
@@ -279,4 +435,5 @@ kubectl delete -f https://storage.googleapis.com/tekton-releases/pipeline/latest
 | `pipelinerun-demo.yaml` | PipelineRun | Lanza el pipeline — editar USUARIO antes de usar |
 | `argocd-application.yaml` | Application | Declara la app en ArgoCD — editar USUARIO antes de usar |
 
-> `secret-docker-credentials.yaml` no está en el repo (contiene credenciales). Crear con `kubectl create secret docker-registry`.
+> `docker-credentials` Secret no está en el repo (contiene credenciales).
+> Crear con `kubectl create secret docker-registry`.

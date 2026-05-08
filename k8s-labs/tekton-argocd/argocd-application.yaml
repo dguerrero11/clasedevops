@@ -4,20 +4,20 @@
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
-  name: mi-tienda
+  name: mi-tienda                 # <- nombre de la app en ArgoCD
   namespace: argocd
 spec:
   project: default
   source:
-    repoURL: "https://github.com/USUARIO/k8s-gitops-demo"   # <- cambiar
+    repoURL: "https://github.com/USUARIO/mi-repo"   # <- cambiar por tu repo GitHub
     targetRevision: main
-    path: k8s
+    path: k8s                     # carpeta donde están deployment.yaml y service.yaml
   destination:
     server: https://kubernetes.default.svc
-    namespace: default
+    namespace: demo               # namespace donde se despliega la app
   syncPolicy:
     automated:
       prune: true
       selfHeal: true
     syncOptions:
-      - CreateNamespace=true
+      - CreateNamespace=true      # crea el namespace si no existe
