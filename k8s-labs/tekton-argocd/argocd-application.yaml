@@ -9,7 +9,7 @@ metadata:
 spec:
   project: default
   source:
-    repoURL: "https://github.com/USUARIO/mi-repo"   # <- cambiar por tu repo GitHub
+    repoURL: "https://github.com/dguerrero11/page-public-demo"   # <- cambiar por tu repo GitHub
     targetRevision: main
     path: k8s                     # carpeta donde están deployment.yaml y service.yaml
   destination:
