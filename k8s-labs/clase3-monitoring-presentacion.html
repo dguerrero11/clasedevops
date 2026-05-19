@@ -1,0 +1,589 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Clase 3 — Observabilidad: Prometheus · Loki · Tempo</title>
+<style>
+  :root {
+    --bg: #0d1117; --surface: #161b22; --border: #30363d;
+    --text: #e6edf3; --muted: #8b949e;
+    --orange: #e3692e; --blue: #1f6feb; --green: #238636;
+    --purple: #a371f7; --yellow: #d29922; --red: #da3633; --cyan: #39c5cf;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: var(--bg); color: var(--text);
+    font-family: 'Segoe UI', system-ui, sans-serif; height: 100vh; overflow: hidden; }
+
+  .deck { width: 100vw; height: 100vh; position: relative; }
+  .slide { position: absolute; inset: 0; display: none; flex-direction: column;
+    justify-content: center; align-items: center; padding: 44px 64px;
+    opacity: 0; transition: opacity .3s ease; }
+  .slide.active { display: flex; opacity: 1; }
+
+  .progress { position: fixed; top: 0; left: 0; height: 3px;
+    background: linear-gradient(90deg, var(--orange), var(--purple));
+    transition: width .3s; z-index: 200; }
+  .nav { position: fixed; bottom: 22px; left: 50%; transform: translateX(-50%);
+    display: flex; align-items: center; gap: 14px;
+    background: rgba(22,27,34,.92); border: 1px solid var(--border);
+    border-radius: 999px; padding: 7px 18px; font-size: 13px; color: var(--muted);
+    backdrop-filter: blur(8px); z-index: 100; }
+  .nav button { background: var(--surface); border: 1px solid var(--border);
+    color: var(--text); border-radius: 6px; padding: 4px 14px; cursor: pointer;
+    font-size: 13px; transition: background .2s; }
+  .nav button:hover { background: var(--orange); border-color: var(--orange); }
+
+  /* ── Cover ── */
+  .cover { background: radial-gradient(ellipse at 55% 40%, #2a1200 0%, var(--bg) 68%); }
+  .eyebrow { font-size: 12px; letter-spacing: .14em; text-transform: uppercase;
+    color: var(--orange); margin-bottom: 14px; font-weight: 600; }
+  .cover h1 { font-size: clamp(30px,5vw,56px); font-weight: 800; line-height: 1.1;
+    text-align: center; margin-bottom: 18px; }
+  .cover h1 em { color: var(--orange); font-style: normal; }
+  .cover p { color: var(--muted); font-size: 17px; text-align: center; max-width: 620px; }
+  .tags { display: flex; gap: 8px; margin-top: 28px; flex-wrap: wrap; justify-content: center; }
+  .tag { padding: 4px 13px; border-radius: 999px; font-size: 12px; font-weight: 600;
+    background: rgba(227,105,46,.15); border: 1px solid rgba(227,105,46,.4); color: var(--orange); }
+  .tag.b { background: rgba(31,111,235,.15); border-color: rgba(31,111,235,.4); color: var(--blue); }
+  .tag.g { background: rgba(35,134,54,.15); border-color: rgba(35,134,54,.4); color: var(--green); }
+  .tag.p { background: rgba(163,113,247,.15); border-color: rgba(163,113,247,.4); color: var(--purple); }
+
+  /* ── Section ── */
+  .section { text-align: center;
+    background: linear-gradient(135deg, #1a0d00 0%, var(--bg) 100%); }
+  .section .num { font-size: 88px; font-weight: 900; line-height: 1;
+    background: linear-gradient(135deg,var(--orange),var(--purple));
+    -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+  .section h2 { font-size: clamp(26px,4vw,46px); font-weight: 800; margin: 8px 0; }
+  .section p { color: var(--muted); font-size: 17px; }
+
+  /* ── Content ── */
+  .content { align-items: flex-start; }
+  .hdr { font-size: clamp(20px,2.6vw,32px); font-weight: 700; width: 100%;
+    border-bottom: 2px solid var(--border); padding-bottom: 14px; margin-bottom: 24px; }
+  .hdr em { color: var(--orange); font-style: normal; }
+  .hdr em.b { color: var(--blue); }
+  .hdr em.p { color: var(--purple); }
+
+  /* ── Demo ── */
+  .demo { background: radial-gradient(ellipse at 25% 75%, #0b2010 0%, var(--bg) 68%); }
+  .demo-badge { font-size: 12px; letter-spacing: .14em; text-transform: uppercase;
+    color: var(--green); font-weight: 700; margin-bottom: 12px; }
+  .demo-title { font-size: clamp(24px,3.5vw,44px); font-weight: 800; margin-bottom: 20px; text-align: center; }
+
+  /* ── Grid ── */
+  .g2 { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; width: 100%; }
+  .g3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 16px; width: 100%; }
+
+  /* ── Card ── */
+  .card { background: var(--surface); border: 1px solid var(--border);
+    border-radius: 12px; padding: 18px 20px; }
+  .card h3 { font-size: 14px; font-weight: 700; margin-bottom: 8px;
+    display: flex; align-items: center; gap: 7px; }
+  .card p, .card li { font-size: 13px; color: var(--muted); line-height: 1.7; }
+  .card ul { padding-left: 16px; }
+  .card.o { border-top: 3px solid var(--orange); }
+  .card.b { border-top: 3px solid var(--blue); }
+  .card.g { border-top: 3px solid var(--green); }
+  .card.p { border-top: 3px solid var(--purple); }
+  .card.c { border-top: 3px solid var(--cyan); }
+
+  /* ── Pre / Code ── */
+  pre { background: #010409; border: 1px solid var(--border); border-radius: 9px;
+    padding: 16px 20px; font-family: 'Cascadia Code','Fira Code',Consolas,monospace;
+    font-size: 12.5px; line-height: 1.75; overflow-x: auto; width: 100%; color: #e6edf3; }
+  .cm { color: var(--muted); font-style: italic; }
+  .hi { color: var(--green); font-weight: 600; }
+  .ho { color: var(--orange); font-weight: 600; }
+  .hp { color: var(--purple); }
+  .hb { color: var(--blue); font-weight: 600; }
+
+  /* ── Promql block ── */
+  .pql { background: #010409; border: 1px solid rgba(227,105,46,.35);
+    border-radius: 8px; padding: 10px 16px; width: 100%; margin: 5px 0;
+    font-family: 'Cascadia Code','Fira Code',monospace; font-size: 12.5px; color: var(--orange); }
+  .pql small { display: block; color: var(--muted); font-size: 11px; margin-bottom: 3px; font-style: italic; }
+
+  /* ── Callout ── */
+  .note { width: 100%; border-radius: 9px; padding: 12px 16px; font-size: 13px; line-height: 1.6; }
+  .note.o { background: rgba(227,105,46,.1); border-left: 4px solid var(--orange); }
+  .note.b { background: rgba(31,111,235,.1); border-left: 4px solid var(--blue); }
+  .note.g { background: rgba(35,134,54,.1); border-left: 4px solid var(--green); }
+  .note.w { background: rgba(210,153,34,.1); border-left: 4px solid var(--yellow); }
+  .note.r { background: rgba(218,54,51,.1); border-left: 4px solid var(--red); }
+  .note strong { font-weight: 700; }
+
+  /* ── Pill ── */
+  .pill { display: flex; align-items: center; gap: 8px;
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 7px; padding: 8px 12px; font-size: 12.5px; }
+  .dot { width: 9px; height: 9px; border-radius: 50%; flex-shrink: 0; }
+  .dot.up { background: var(--green); box-shadow: 0 0 5px var(--green); }
+  .pill .nm { color: var(--text); font-weight: 600; font-family: monospace; flex: 1; }
+  .pill .val { color: var(--orange); font-weight: 700; font-family: monospace; }
+
+  /* ── Steps ── */
+  .steps { list-style: none; width: 100%; }
+  .steps li { display: flex; align-items: flex-start; gap: 14px;
+    padding: 11px 0; border-bottom: 1px solid var(--border); font-size: 14px; line-height: 1.5; }
+  .steps li:last-child { border: none; }
+  .sn { min-width: 28px; height: 28px; border-radius: 50%; background: var(--orange);
+    display: flex; align-items: center; justify-content: center;
+    font-size: 12px; font-weight: 700; color: #fff; flex-shrink: 0; }
+  .sn.b { background: var(--blue); }
+  .sn.g { background: var(--green); }
+  .sn.p { background: var(--purple); }
+
+  /* ── Close ── */
+  .close { text-align: center;
+    background: radial-gradient(ellipse at 50% 50%, #1a0d00 0%, var(--bg) 68%); }
+  .close-ico { font-size: 60px; margin-bottom: 14px; }
+  .close h2 { font-size: 34px; font-weight: 800; margin-bottom: 10px; }
+  .kbd { display: inline-block; background: var(--surface); border: 1px solid var(--border);
+    border-radius: 4px; padding: 1px 6px; font-size: 11px; font-family: monospace; }
+</style>
+</head>
+<body>
+<div class="progress" id="prog"></div>
+<div class="deck" id="deck">
+
+<!-- ═══ 1 — COVER ═══════════════════════════════════════════════════════════ -->
+<div class="slide cover active">
+  <div class="eyebrow">Bootcamp Kubernetes · Clase 3 de 5</div>
+  <h1>Observabilidad completa:<br><em>Prometheus · Loki · Tempo</em></h1>
+  <p>Métricas, logs y trazas en un solo lugar. Ver cualquier problema en segundos.</p>
+  <div class="tags">
+    <span class="tag">Prometheus</span>
+    <span class="tag p">Grafana</span>
+    <span class="tag g">Node Exporter</span>
+    <span class="tag b">Loki</span>
+    <span class="tag">Promtail</span>
+    <span class="tag p">Tempo</span>
+  </div>
+</div>
+
+<!-- ═══ 2 — LAS 3 SEÑALES ══════════════════════════════════════════════════ -->
+<div class="slide content">
+  <div class="hdr">Las <em>3 señales</em> de observabilidad</div>
+  <div class="g3">
+    <div class="card o">
+      <h3>📊 Métricas</h3>
+      <p><strong>¿Qué tan cargado está?</strong><br>CPU, RAM, disco, pods Running. Números a lo largo del tiempo.<br><br>
+      <strong>Herramienta:</strong> Prometheus + Grafana<br>
+      Ya está corriendo en :30090 / :30300</p>
+    </div>
+    <div class="card b">
+      <h3>📄 Logs</h3>
+      <p><strong>¿Qué pasó exactamente?</strong><br>Cada línea que escribe tu app o Kubernetes. El mensaje de error real.<br><br>
+      <strong>Herramienta:</strong> Loki + Promtail<br>
+      Lo agregamos hoy</p>
+    </div>
+    <div class="card p">
+      <h3>🔗 Trazas</h3>
+      <p><strong>¿Dónde tardó?</strong><br>El camino de una request a través de servicios, con tiempos por tramo.<br><br>
+      <strong>Herramienta:</strong> Tempo<br>
+      Lo agregamos hoy</p>
+    </div>
+  </div>
+  <div class="note o" style="margin-top:14px">
+    <strong>La magia:</strong> las 3 están correlacionadas en Grafana. Un clic en una métrica → logs de ese momento → traza de ese request.
+  </div>
+</div>
+
+<!-- ═══ 3 — SECCIÓN PROMETHEUS ════════════════════════════════════════════ -->
+<div class="slide section">
+  <div class="num">01</div>
+  <h2>Prometheus + Grafana</h2>
+  <p>Ya está desplegado — lo exploramos y verificamos</p>
+</div>
+
+<!-- ═══ 4 — DEMO 1: PROMETHEUS TARGETS ═══════════════════════════════════ -->
+<div class="slide demo">
+  <div class="demo-badge">🔥 Demo 1 — Prometheus</div>
+  <div class="demo-title">Verificar targets y correr queries</div>
+  <div style="width:100%;max-width:780px;display:flex;flex-direction:column;gap:12px">
+    <div class="note o"><strong>Abrir:</strong> <code>http://192.168.109.142:30090</code> → Status → Targets</div>
+    <div style="display:flex;flex-direction:column;gap:7px">
+      <div class="pill"><div class="dot up"></div><span class="nm">node-exporter (.142, .143, .144, .145 :9100)</span><span class="val">UP ×4</span></div>
+      <div class="pill"><div class="dot up"></div><span class="nm">kube-state-metrics.monitoring.svc:8080</span><span class="val">UP</span></div>
+      <div class="pill"><div class="dot up"></div><span class="nm">prometheus localhost:9090</span><span class="val">UP</span></div>
+    </div>
+    <div class="g2" style="gap:12px">
+      <div>
+        <div class="pql"><small>% CPU usado por nodo</small>100 - (avg by (instance) (rate(node_cpu_seconds_total{mode="idle"}[5m])) * 100)</div>
+        <div class="pql"><small>RAM disponible en GB</small>node_memory_MemAvailable_bytes / 1024 / 1024 / 1024</div>
+      </div>
+      <div>
+        <div class="pql"><small>Pods en estado Running</small>count(kube_pod_status_phase{phase="Running"})</div>
+        <div class="pql"><small>Uso de disco %</small>(1 - node_filesystem_free_bytes{mountpoint="/"} / node_filesystem_size_bytes{mountpoint="/"}) * 100</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══ 5 — DEMO 2: GRAFANA DASHBOARD ════════════════════════════════════ -->
+<div class="slide demo">
+  <div class="demo-badge">📊 Demo 2 — Grafana</div>
+  <div class="demo-title">Datasource + Dashboard ID 1860</div>
+  <div style="width:100%;max-width:780px;display:flex;flex-direction:column;gap:12px">
+    <div class="note o"><strong>URL:</strong> <code>http://192.168.109.142:30300</code> · admin / Admin123!</div>
+    <div class="g2" style="gap:12px">
+      <div class="card g">
+        <h3>📡 Datasource (si no está)</h3>
+        <ul style="font-size:13px">
+          <li>Connections → Data sources → Add</li>
+          <li>Tipo: <strong>Prometheus</strong></li>
+          <li>URL: <code>http://prometheus.monitoring.svc:9090</code></li>
+          <li>Save &amp; test → "Data source is working"</li>
+        </ul>
+        <div class="note w" style="margin-top:8px;font-size:12px"><strong>⚠️ Usar URL interna</strong>, no :30090</div>
+      </div>
+      <div class="card p">
+        <h3>📊 Importar dashboard</h3>
+        <ul style="font-size:13px">
+          <li>Dashboards → Import</li>
+          <li>ID: <strong>1860</strong> → Load</li>
+          <li>Datasource: Prometheus → Import</li>
+          <li>Filtrar por nodo con el dropdown <strong>host</strong></li>
+          <li>Refresh: cambiar a <strong>5s</strong> para la demo</li>
+        </ul>
+      </div>
+    </div>
+    <div class="note g"><strong>También importar:</strong> ID <code>13332</code> (kube-state-metrics) para ver pods, deployments, PVCs de Kubernetes</div>
+  </div>
+</div>
+
+<!-- ═══ 6 — SECCIÓN LOKI ═══════════════════════════════════════════════════ -->
+<div class="slide section">
+  <div class="num">02</div>
+  <h2>Loki + Promtail</h2>
+  <p>Logs de todos los pods del cluster — demo, tekton, argocd — en Grafana</p>
+</div>
+
+<!-- ═══ 7 — DEPLOY LOKI ════════════════════════════════════════════════════ -->
+<div class="slide content">
+  <div class="hdr">Desplegar <em>Loki</em> + Promtail</div>
+  <div class="g2">
+    <div>
+      <pre><span class="cm"># Prerequisito: etiquetar namespace</span>
+kubectl label namespace monitoring \
+  pod-security.kubernetes.io/enforce=privileged \
+  --overwrite
+
+<span class="cm"># 1. Loki (servidor de logs)</span>
+kubectl apply -f loki/loki-configmap.yaml
+kubectl apply -f loki/loki-pvc.yaml
+kubectl apply -f loki/loki-deployment.yaml
+kubectl apply -f loki/loki-service.yaml
+
+<span class="cm"># 2. Promtail (colector en cada nodo)</span>
+kubectl apply -f promtail/promtail-rbac.yaml
+kubectl apply -f promtail/promtail-configmap.yaml
+kubectl apply -f promtail/promtail-daemonset.yaml
+
+<span class="cm"># Verificar</span>
+kubectl get pods -n monitoring -l app=loki
+kubectl get pods -n monitoring -l app=promtail</pre>
+    </div>
+    <div style="display:flex;flex-direction:column;gap:12px">
+      <div class="card b">
+        <h3>🔄 Cómo funciona</h3>
+        <ul style="font-size:13px">
+          <li><strong>Promtail</strong> corre en cada nodo como DaemonSet</li>
+          <li>Lee <code>/var/log/pods/*</code> — todos los contenedores</li>
+          <li>Agrega labels: namespace, pod, container</li>
+          <li>Envía a <strong>Loki</strong> via push HTTP</li>
+          <li>Loki guarda en PVC NFS (5Gi, 7 días)</li>
+        </ul>
+      </div>
+      <div class="note w">
+        <strong>Si hay error de permisos NFS:</strong><br>
+        <code style="font-size:11px">ssh root@192.168.109.210 "chown -R 10001:10001 /srv/nfs/k8s"</code><br>
+        <code style="font-size:11px">kubectl rollout restart deployment/loki -n monitoring</code>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══ 8 — DEMO 3: LOKI LOGS ═════════════════════════════════════════════ -->
+<div class="slide demo">
+  <div class="demo-badge">📄 Demo 3 — Loki</div>
+  <div class="demo-title">Buscar logs de la app y de ArgoCD</div>
+  <div style="width:100%;max-width:800px;display:flex;flex-direction:column;gap:10px">
+    <div class="note b"><strong>Grafana → Explore → Datasource: Loki</strong></div>
+    <div class="g2" style="gap:10px">
+      <div style="display:flex;flex-direction:column;gap:8px">
+        <div class="pql" style="border-color:rgba(31,111,235,.4);color:var(--blue)">
+          <small>Logs de la app (namespace demo)</small>
+          {namespace="demo"}
+        </div>
+        <div class="pql" style="border-color:rgba(31,111,235,.4);color:var(--blue)">
+          <small>Logs del sync de ArgoCD</small>
+          {namespace="argocd"}
+        </div>
+        <div class="pql" style="border-color:rgba(31,111,235,.4);color:var(--blue)">
+          <small>Ver logs de un Task de Tekton</small>
+          {namespace="tekton-pipelines"}
+        </div>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:8px">
+        <div class="pql" style="border-color:rgba(31,111,235,.4);color:var(--blue)">
+          <small>Buscar errores en cualquier namespace</small>
+          {namespace=~"demo|argocd"} |= "error"
+        </div>
+        <div class="pql" style="border-color:rgba(31,111,235,.4);color:var(--blue)">
+          <small>Logs de un pod específico</small>
+          {pod="page-demo-f74bc7f8d-m9b7q"}
+        </div>
+        <div class="note g" style="font-size:12px">
+          <strong>LogQL</strong> es como PromQL pero para logs.<br>
+          <code>|=</code> contiene texto &nbsp; <code>!=</code> no contiene &nbsp;
+          <code>|~ "regex"</code> regex
+        </div>
+      </div>
+    </div>
+    <div class="note b">
+      <strong>Bonus:</strong> Genera tráfico en la app mientras miras los logs en vivo.<br>
+      <code>curl -s http://192.168.109.142:31080/ > /dev/null</code> (repetir varias veces)
+    </div>
+  </div>
+</div>
+
+<!-- ═══ 9 — SECCIÓN TEMPO ══════════════════════════════════════════════════ -->
+<div class="slide section">
+  <div class="num">03</div>
+  <h2>Tempo — Trazas distribuidas</h2>
+  <p>Ver el camino completo de una petición y dónde tardó</p>
+</div>
+
+<!-- ═══ 10 — DEPLOY TEMPO ═════════════════════════════════════════════════ -->
+<div class="slide content">
+  <div class="hdr">Desplegar <em class="p">Tempo</em> + activar trazas en Tekton</div>
+  <div class="g2">
+    <div>
+      <pre><span class="cm"># 1. Desplegar Tempo</span>
+kubectl apply -f tempo/tempo-configmap.yaml
+kubectl apply -f tempo/tempo-pvc.yaml
+kubectl apply -f tempo/tempo-deployment.yaml
+kubectl apply -f tempo/tempo-service.yaml
+
+<span class="cm"># Verificar</span>
+kubectl get pods -n monitoring -l app=tempo
+
+<span class="cm"># 2. Activar trazas en Tekton (OTLP → Tempo)</span>
+kubectl patch configmap config-tracing \
+  -n tekton-pipelines --type merge \
+  -p '{
+    "data": {
+      "backend": "otlp",
+      "endpoint": "tempo.monitoring.svc:4317"
+    }
+  }'
+
+kubectl rollout restart deployment/tekton-pipelines-controller \
+  -n tekton-pipelines
+
+<span class="cm"># El siguiente PipelineRun enviará trazas a Tempo</span></pre>
+    </div>
+    <div style="display:flex;flex-direction:column;gap:12px">
+      <div class="card p">
+        <h3>🔗 Protocolos que acepta Tempo</h3>
+        <ul style="font-size:13px">
+          <li><strong>OTLP gRPC</strong> :4317 — Tekton, apps modernas</li>
+          <li><strong>OTLP HTTP</strong> :4318 — REST</li>
+          <li><strong>Jaeger HTTP</strong> :14268 — Java, Go</li>
+          <li><strong>Zipkin</strong> :9411 — Spring Boot</li>
+        </ul>
+      </div>
+      <div class="card o">
+        <h3>📤 Traza de prueba manual</h3>
+        <p style="font-size:12px">Si la app no tiene instrumentación, enviar una traza desde <code>curl</code> para demostrar que Tempo funciona.</p>
+        <p style="font-size:12px;margin-top:6px">Ver comando en el README-loki-tempo.md</p>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══ 11 — DATASOURCES GRAFANA ══════════════════════════════════════════ -->
+<div class="slide content">
+  <div class="hdr">Conectar <em>Loki y Tempo</em> a Grafana automáticamente</div>
+  <div class="g2">
+    <div>
+      <pre><span class="cm"># 1. Aplicar el ConfigMap de datasources</span>
+kubectl apply -f grafana-datasources-provisioning.yaml
+
+<span class="cm"># 2. Parchear Grafana para montar el ConfigMap</span>
+kubectl patch deployment grafana \
+  -n monitoring --type=json -p='[
+  {
+    "op": "add",
+    "path": "/spec/template/spec/volumes/-",
+    "value": {
+      "name": "datasources",
+      "configMap": {"name": "grafana-datasources"}
+    }
+  },
+  {
+    "op": "add",
+    "path": "/spec/template/spec/containers/0/volumeMounts/-",
+    "value": {
+      "name": "datasources",
+      "mountPath": "/etc/grafana/provisioning/datasources"
+    }
+  }
+]'
+
+<span class="cm"># 3. Reiniciar Grafana</span>
+kubectl rollout restart deployment/grafana -n monitoring
+kubectl rollout status deployment/grafana -n monitoring</pre>
+    </div>
+    <div style="display:flex;flex-direction:column;gap:12px">
+      <div class="card g">
+        <h3>✅ Verificar en Grafana UI</h3>
+        <ul style="font-size:13px">
+          <li>Connections → Data sources</li>
+          <li>Deben aparecer automáticamente:<br>
+            <strong>Prometheus</strong>, <strong>Loki</strong>, <strong>Tempo</strong></li>
+          <li>Sin tocar nada en la UI</li>
+        </ul>
+      </div>
+      <div class="card b">
+        <h3>🔗 Correlaciones activas</h3>
+        <ul style="font-size:13px">
+          <li>Prometheus → Tempo: clic en ejemplar → traza</li>
+          <li>Loki → Tempo: clic en traceID en log → traza</li>
+          <li>Tempo → Loki: desde traza → logs del pod</li>
+          <li>Tempo → Prometheus: desde traza → métricas del servicio</li>
+        </ul>
+      </div>
+      <div class="note o" style="font-size:12px">
+        <strong>Provisioning automático:</strong> Grafana carga el directorio
+        <code>/etc/grafana/provisioning/datasources/</code> en cada arranque.
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══ 12 — DEMO 4: TRACES ════════════════════════════════════════════════ -->
+<div class="slide demo">
+  <div class="demo-badge">🔗 Demo 4 — Tempo</div>
+  <div class="demo-title">Traza de un PipelineRun de Tekton</div>
+  <div style="width:100%;max-width:800px;display:flex;flex-direction:column;gap:10px">
+    <div class="note b"><strong>Paso 1 — Lanzar un PipelineRun</strong></div>
+    <pre style="font-size:12px">
+<span class="cm"># Borrar el run anterior y lanzar uno nuevo</span>
+kubectl delete pipelinerun build-and-deploy-run-1 -n tekton-pipelines
+kubectl apply -f /ruta/tekton-argocd/pipelinerun-demo.yaml
+tkn pipelinerun logs --last -f -n tekton-pipelines</pre>
+    <div class="note p"><strong>Paso 2 — Buscar la traza en Grafana</strong></div>
+    <div class="g2" style="gap:10px">
+      <div class="card p">
+        <h3>🔍 Grafana → Explore → Tempo</h3>
+        <ul style="font-size:12px">
+          <li>Query type: <strong>Search</strong></li>
+          <li>Service name: <code>tekton-pipelines-controller</code></li>
+          <li>Buscar → ver los spans de cada Task</li>
+          <li>Clic en la traza → ver cascada de tiempos</li>
+        </ul>
+      </div>
+      <div class="card b">
+        <h3>📄 Ver el log de ese Task</h3>
+        <ul style="font-size:12px">
+          <li>Dentro de la traza, clic en un span</li>
+          <li>Clic en "Logs for this span"</li>
+          <li>Grafana abre Loki con los logs de ese momento</li>
+          <li>Sin buscar manualmente — correlación automática</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══ 13 — LAB ════════════════════════════════════════════════════════════ -->
+<div class="slide content">
+  <div class="hdr">🧪 Lab — <em>Tu turno</em></div>
+  <div class="g2">
+    <ul class="steps">
+      <li><span class="sn">1</span><div><strong>Verificar todos los pods Running</strong><br>
+        <code style="font-size:12px">kubectl get pods -n monitoring</code><br>
+        <span style="color:var(--muted);font-size:13px">loki + promtail ×4 + tempo + prometheus + grafana</span></div></li>
+      <li><span class="sn b">2</span><div><strong>Ejecutar 3 queries PromQL en Prometheus</strong><br>
+        <span style="color:var(--muted);font-size:13px">% CPU, pods Running, RAM disponible</span></div></li>
+      <li><span class="sn p">3</span><div><strong>Importar dashboard 1860 en Grafana</strong><br>
+        <span style="color:var(--muted);font-size:13px">Filtrar por nodo, cambiar refresh a 5s</span></div></li>
+      <li><span class="sn b">4</span><div><strong>Buscar logs de demo y argocd en Loki</strong><br>
+        <code style="font-size:12px">{namespace="demo"} {namespace="argocd"}</code></div></li>
+      <li><span class="sn g">5</span><div><strong>Lanzar un PipelineRun y verlo en Tempo</strong><br>
+        <span style="color:var(--muted);font-size:13px">Buscar por servicio tekton-pipelines-controller</span></div></li>
+    </ul>
+    <div style="display:flex;flex-direction:column;gap:12px">
+      <div class="card o">
+        <h3>📎 Referencia rápida</h3>
+        <table style="font-size:12px;width:100%;border-collapse:collapse">
+          <tr><td style="padding:4px 0;color:var(--muted)">Prometheus</td><td><code>:30090</code></td></tr>
+          <tr><td style="padding:4px 0;color:var(--muted)">Grafana</td><td><code>:30300</code></td></tr>
+          <tr><td style="padding:4px 0;color:var(--muted)">Loki (interno)</td><td><code>loki.monitoring.svc:3100</code></td></tr>
+          <tr><td style="padding:4px 0;color:var(--muted)">Tempo (interno)</td><td><code>tempo.monitoring.svc:3200</code></td></tr>
+          <tr><td style="padding:4px 0;color:var(--muted)">Grafana admin</td><td><code>admin / Admin123!</code></td></tr>
+        </table>
+      </div>
+      <div class="note g">
+        <strong>✅ Entregable:</strong> Screenshot de Grafana con los 3 datasources activos (Prometheus, Loki, Tempo) y un log de la app visible en Explore.
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══ 14 — CLOSE ══════════════════════════════════════════════════════════ -->
+<div class="slide close">
+  <div class="close-ico">🎯</div>
+  <h2>Observabilidad completa</h2>
+  <p style="color:var(--muted);font-size:17px;max-width:560px;margin:0 auto 24px">
+    Métricas + Logs + Trazas enlazados. De una alerta en Prometheus a la línea exacta de código que falló.
+  </p>
+  <div style="display:flex;gap:12px;flex-wrap:wrap;justify-content:center">
+    <div class="note o" style="width:200px;text-align:left"><strong>🔥 Prometheus</strong><br><code>192.168.109.142:30090</code></div>
+    <div class="note b" style="width:200px;text-align:left"><strong>📄 Loki</strong><br><code>loki.monitoring.svc:3100</code></div>
+    <div class="note" style="width:200px;text-align:left;background:rgba(163,113,247,.1);border-left:4px solid var(--purple)"><strong>🔗 Tempo</strong><br><code>tempo.monitoring.svc:3200</code></div>
+    <div class="note" style="width:200px;text-align:left;background:rgba(163,113,247,.1);border-left:4px solid var(--purple)"><strong>📊 Grafana</strong><br><code>192.168.109.142:30300</code></div>
+  </div>
+  <p style="margin-top:28px;color:var(--muted);font-size:13px"><span class="kbd">←</span> <span class="kbd">→</span> navegar · <span class="kbd">Home</span> inicio · <span class="kbd">End</span> final</p>
+</div>
+
+</div><!-- /deck -->
+
+<div class="nav">
+  <button onclick="go(-1)">← Anterior</button>
+  <span id="cnt">1 / 14</span>
+  <button onclick="go(1)">Siguiente →</button>
+</div>
+
+<script>
+  const slides = document.querySelectorAll('.slide');
+  const cnt = document.getElementById('cnt');
+  const prog = document.getElementById('prog');
+  let cur = 0;
+
+  function show(n) {
+    slides[cur].classList.remove('active');
+    cur = Math.max(0, Math.min(n, slides.length - 1));
+    slides[cur].classList.add('active');
+    cnt.textContent = `${cur + 1} / ${slides.length}`;
+    prog.style.width = `${((cur + 1) / slides.length) * 100}%`;
+  }
+  function go(d) { show(cur + d); }
+
+  document.addEventListener('keydown', e => {
+    if (['ArrowRight','ArrowDown',' '].includes(e.key)) { e.preventDefault(); go(1); }
+    if (['ArrowLeft','ArrowUp'].includes(e.key)) { e.preventDefault(); go(-1); }
+    if (e.key === 'Home') show(0);
+    if (e.key === 'End')  show(slides.length - 1);
+  });
+  let tx = 0;
+  document.addEventListener('touchstart', e => tx = e.touches[0].clientX);
+  document.addEventListener('touchend',   e => { const d = e.changedTouches[0].clientX - tx; if (Math.abs(d) > 50) go(d < 0 ? 1 : -1); });
+  prog.style.width = `${(1 / slides.length) * 100}%`;
+</script>
+</body>
+</html>

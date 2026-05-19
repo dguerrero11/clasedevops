@@ -1,0 +1,85 @@
+# ConfigMap que Grafana carga automáticamente como datasources
+# Montar en /etc/grafana/provisioning/datasources/
+# Ver instrucciones de aplicación al final del archivo
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: grafana-datasources
+  namespace: monitoring
+data:
+  datasources.yaml: |
+    apiVersion: 1
+    datasources:
+
+      # ── Prometheus (métricas) ─────────────────────────────────────────
+      - name: Prometheus
+        type: prometheus
+        uid: prometheus
+        url: http://prometheus.monitoring.svc:9090
+        access: proxy
+        isDefault: true
+        jsonData:
+          timeInterval: "15s"
+          exemplarTraceIdDestinations:
+            - name: traceID
+              datasourceUid: tempo
+
+      # ── Loki (logs) ──────────────────────────────────────────────────
+      - name: Loki
+        type: loki
+        uid: loki
+        url: http://loki.monitoring.svc:3100
+        access: proxy
+        jsonData:
+          # Correlación: clic en traceID en un log → abre la traza en Tempo
+          derivedFields:
+            - name: TraceID
+              matcherRegex: '"traceID":"(\w+)"'
+              url: "$${__value.raw}"
+              datasourceUid: tempo
+
+      # ── Tempo (trazas) ───────────────────────────────────────────────
+      - name: Tempo
+        type: tempo
+        uid: tempo
+        url: http://tempo.monitoring.svc:3200
+        access: proxy
+        jsonData:
+          # Correlación: desde una traza → ver logs en Loki
+          tracesToLogsV2:
+            datasourceUid: loki
+            tags:
+              - key: "namespace"
+              - key: "pod"
+          # Correlación: desde una traza → ver métricas en Prometheus
+          tracesToMetrics:
+            datasourceUid: prometheus
+            tags:
+              - key: "namespace"
+              - key: "pod"
+          # Mapa de servicios (requiere metrics_generator en Tempo)
+          serviceMap:
+            datasourceUid: prometheus
+          nodeGraph:
+            enabled: true
+
+# ─────────────────────────────────────────────────────────────────────────────
+# INSTRUCCIONES DE APLICACIÓN
+# ─────────────────────────────────────────────────────────────────────────────
+#
+# 1. Aplicar este ConfigMap:
+#    kubectl apply -f grafana-datasources-provisioning.yaml
+#
+# 2. Parchear el Deployment de Grafana para montar el ConfigMap:
+#    kubectl patch deployment grafana -n monitoring --type=json -p='[
+#      {"op":"add","path":"/spec/template/spec/volumes/-","value":{"name":"datasources","configMap":{"name":"grafana-datasources"}}},
+#      {"op":"add","path":"/spec/template/spec/containers/0/volumeMounts/-","value":{"name":"datasources","mountPath":"/etc/grafana/provisioning/datasources"}}
+#    ]'
+#
+# 3. Reiniciar Grafana:
+#    kubectl rollout restart deployment/grafana -n monitoring
+#    kubectl rollout status deployment/grafana -n monitoring
+#
+# 4. Verificar en Grafana:
+#    http://192.168.109.142:30300 → Connections → Data sources
+#    Deben aparecer: Prometheus, Loki, Tempo
